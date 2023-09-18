@@ -1,6 +1,5 @@
 import os
 
-
 class Student:
     def __init__(self, id:int, name:str, sid:int):
         self.id = id

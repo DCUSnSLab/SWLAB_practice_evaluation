@@ -1,5 +1,6 @@
-from gitgrabber import gitGrabber
 from lecture import Lecture
+from src.swlab_db import DBConn
+import src.setup_logging
 from student import Student
 import csv
 import re
@@ -7,17 +8,15 @@ import re
 class Evaluator:
     def __init__(self):
         self.id = 0
+        self.db = DBConn()
 
     def start(self):
-        lecture = self.getDatafromCSV('python01.csv', Lecture(0, 'python', 1))
-        self.syncCodefromLecture(lecture)
+        # lecture = self.getDatafromCSV('python01.csv', Lecture(0, 'python', 1))
+        # lecture.syncCodefromLecture()
 
-    def syncCodefromLecture(self, lecture:Lecture):
-        tcnt = len(lecture.getStudentList())
-        for idx, l in enumerate(lecture.getStudentList()):
-            print('[%d/%d] Sync Code of Lecture named %s-%d'%(idx+1, tcnt, lecture.name,lecture.division))
-            gg = gitGrabber(student=l, lec=lecture)
-            gg.syncCode()
+        lecture2 = self.getDatafromCSV('testdata/python02_test.csv', Lecture(1, 'python', 2))
+        self.insertIntoDB(lecture2)
+        lecture2.syncCodefromLecture()
 
     def filterString(self, data):
         return re.sub(r'[^0-9]', '', data)
@@ -32,6 +31,13 @@ class Evaluator:
             lecture.addStudent(s)
         f.close()
         return lecture
+
+    def insertIntoDB(self, lecture:Lecture):
+        print('insert db')
+        self.db.insertLecture(lecture)
+        for std in lecture.getStudentList():
+            self.db.insertStudent(lecture, std)
+        #database.insertLecture(lecture)
 
 if __name__ == "__main__":
     eval = Evaluator()
