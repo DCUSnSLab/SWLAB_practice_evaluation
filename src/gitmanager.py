@@ -1,14 +1,15 @@
-from lecture import Lecture
 from student import Student
 from git.repo import Repo
 import sys
 import os
+from src.setup_logging import logger
 
-class gitGrabber:
-    def __init__(self, student:Student, lec:Lecture):
+class gitManager:
+    def __init__(self, student:Student, lec):
         self.student = student
         self.lec = lec
         self.origindir = 'origin'
+        logger.name = __name__
 
     def make_safe_dir(self, dir):
         if not os.path.exists(dir):
@@ -22,12 +23,12 @@ class gitGrabber:
         gitaddr = self.student.getGitLinkbyLecture(self.lec)
 
         if self.has_dir(target_dir):
-            print(target_dir, '  --- pull Code from github..', gitaddr)
+            logger.info(' ----- pull code [%s] [%s]'%(target_dir, gitaddr))
             repo = Repo(target_dir)
             o = repo.remotes.origin
             o.pull()
         else:
-            print(target_dir, '  --- Clone Code from github..', gitaddr)
+            logger.info(' ----- clone code [%s] [%s]' % (target_dir, gitaddr))
             self.make_safe_dir(target_dir)
             repog = Repo.clone_from(gitaddr, target_dir)
 
