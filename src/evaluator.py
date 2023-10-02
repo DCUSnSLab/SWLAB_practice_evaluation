@@ -11,12 +11,12 @@ class Evaluator:
         self.db = DBConn()
 
     def start(self):
-        # lecture = self.getDatafromCSV('python01.csv', Lecture(0, 'python', 1))
-        # lecture.syncCodefromLecture()
+        lecture = self.getDatafromCSV('testdata/python01.csv', Lecture(0, 'python', 1))
+        lecture.syncCodefromLecture()
 
-        lecture2 = self.getDatafromCSV('testdata/python02_test.csv', Lecture(1, 'python', 2))
-        self.insertIntoDB(lecture2)
-        lecture2.syncCodefromLecture()
+        #lecture2 = self.getDatafromCSV('testdata/python02_test.csv', Lecture(1, 'python', 2))
+        #self.insertIntoDB(lecture2)
+        #lecture2.syncCodefromLecture()
 
     def filterString(self, data):
         return re.sub(r'[^0-9]', '', data)
