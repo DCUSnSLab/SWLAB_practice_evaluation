@@ -9,7 +9,7 @@ class BaseModel(Model):
 
 class Student(BaseModel):
     id = IntegerField(primary_key=True)
-    name = CharField(unique=True)
+    name = CharField()
     sid = IntegerField(unique=True)
     created_date = DateTimeField(default=datetime.datetime.now)
 
