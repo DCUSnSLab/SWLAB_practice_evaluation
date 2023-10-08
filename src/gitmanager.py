@@ -21,14 +21,14 @@ class gitManager:
     def syncCode(self):
         target_dir = os.path.join(self.origindir, self.student.getFilePathbyLecture(self.lec))
         gitaddr = self.student.getGitLinkbyLecture(self.lec)
-
-        if self.has_dir(target_dir):
+        if self.has_dir(target_dir): #폴더가 있을 경우 pull
             logger.info(' ----- pull code [%s] [%s]'%(target_dir, gitaddr))
             repo = Repo(target_dir)
             o = repo.remotes.origin
             o.pull()
-        else:
+        else: #폴더가 없을 경우 clone
             logger.info(' ----- clone code [%s] [%s]' % (target_dir, gitaddr))
             self.make_safe_dir(target_dir)
             repog = Repo.clone_from(gitaddr, target_dir)
+            #Repo.clone_from(gitaddr, target_dir)
 

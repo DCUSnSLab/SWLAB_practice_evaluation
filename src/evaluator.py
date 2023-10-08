@@ -1,21 +1,27 @@
+import sys
+
 from lecture import Lecture
 from src.swlab_db import DBConn
 import src.setup_logging
 from student import Student
 import csv
 import re
+from PyQt6.QtWidgets import *
+from gui import Gui
+
 
 class Evaluator:
     def __init__(self):
         self.id = 0
-        self.db = DBConn()
+        #self.db = DBConn()
+
 
     def start(self):
-        # lecture = self.getDatafromCSV('python01.csv', Lecture(0, 'python', 1))
-        # lecture.syncCodefromLecture()
+        #lecture = self.getDatafromCSV('../testdata/python01.csv', Lecture(0, 'python', 1))
+        #lecture.syncCodefromLecture()
 
-        lecture2 = self.getDatafromCSV('testdata/python02_test.csv', Lecture(1, 'python', 2))
-        self.insertIntoDB(lecture2)
+        lecture2 = self.getDatafromCSV('../testdata/python02_test.csv', Lecture(1, 'python', 2))
+        #self.insertIntoDB(lecture2)
         lecture2.syncCodefromLecture()
 
     def filterString(self, data):
@@ -39,6 +45,12 @@ class Evaluator:
             self.db.insertStudent(lecture, std)
         #database.insertLecture(lecture)
 
+
 if __name__ == "__main__":
     eval = Evaluator()
     eval.start()
+
+    app = QApplication(sys.argv)
+    gui = Gui()
+    gui.init_ui()
+    sys.exit(app.exec())
