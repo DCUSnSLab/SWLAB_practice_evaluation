@@ -1,11 +1,13 @@
 from PyQt6.QtWidgets import *
 import sys
 
+from src.evaluator import Evaluator
 
 
 class Gui(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.eval = Evaluator()
         self.init_ui()
 
     def init_ui(self):
@@ -28,7 +30,7 @@ class Gui(QMainWindow):
         self.lineedit.setText('testtest')
         layout.addWidget(self.lineedit)
 
-        self.label = QLabel('hello')
+        self.label = QLabel('file name')
         layout.addWidget(self.label)
 
         central_widget.setLayout(layout)
@@ -39,3 +41,5 @@ class Gui(QMainWindow):
         if not fname:
             return
         self.label.setText(fname[0])
+        self.eval.loadfile(fname[0])
+
