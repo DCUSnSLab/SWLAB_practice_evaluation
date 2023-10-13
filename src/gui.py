@@ -11,7 +11,7 @@ class Gui(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setGeometry(300, 300, 320, 240)
+        self.setGeometry(500, 500, 500, 240)
         self.setWindowTitle('PyQt6 Example')
 
 
@@ -27,19 +27,20 @@ class Gui(QMainWindow):
         layout.addWidget(self.btnLoad)
 
         self.lineedit = QLineEdit(self)
-        self.lineedit.setText('testtest')
+        self.lineedit.setText('file name : ')
         layout.addWidget(self.lineedit)
 
-        self.label = QLabel('file name')
+        self.label = QLabel('choose file')
         layout.addWidget(self.label)
+        # self.label2 = QLabel('file name : ')
+        # layout.addWidget(self.label2)
 
         central_widget.setLayout(layout)
         self.show()
 
     def load(self):
         fname = QFileDialog.getOpenFileName(self)
-        if not fname:
-            return
-        self.label.setText(fname[0])
         self.eval.loadfile(fname[0])
+        self.label.setText("Clear Git clone & pull")
+        self.lineedit.setText("file path : %s" %fname[0])
 

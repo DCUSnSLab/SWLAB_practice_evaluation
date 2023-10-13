@@ -1,5 +1,4 @@
 from lecture import Lecture
-import src.setup_logging
 from student import Student
 import csv
 import re
@@ -9,7 +8,6 @@ import re
 class Evaluator:
     def __init__(self):
         self.id = 0
-        #self.db = DBConn()
 
     def loadfile(self,file):
         #lecture = self.getDatafromCSV('../testdata/python01.csv', Lecture(0, 'python', 1))
@@ -18,7 +16,7 @@ class Evaluator:
         # lecture2 = self.getDatafromCSV('../testdata/python02_test.csv', Lecture(1, 'python', 2))
         # #self.insertIntoDB(lecture2)
         # lecture2.syncCodefromLecture()
-
+        print(type(file))
         lecture = self.getDatafromCSV(file, Lecture(1, 'python', 2))
         lecture.syncCodefromLecture()
 
