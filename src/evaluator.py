@@ -16,7 +16,7 @@ class Evaluator:
         # lecture2 = self.getDatafromCSV('../testdata/python02_test.csv', Lecture(1, 'python', 2))
         # #self.insertIntoDB(lecture2)
         # lecture2.syncCodefromLecture()
-        print(type(file))
+
         lecture = self.getDatafromCSV(file, Lecture(1, 'python', 2))
         lecture.syncCodefromLecture()
 
