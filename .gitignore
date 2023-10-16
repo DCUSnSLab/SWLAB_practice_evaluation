@@ -161,4 +161,3 @@ cython_debug/
 origin/
 dataset/
 *.DS_Store
-src/origin/
