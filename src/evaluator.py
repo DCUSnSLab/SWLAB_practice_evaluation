@@ -16,8 +16,8 @@ class Evaluator:
         # lecture2 = self.getDatafromCSV('../testdata/python02_test.csv', Lecture(1, 'python', 2))
         # #self.insertIntoDB(lecture2)
         # lecture2.syncCodefromLecture()
-
-        lecture = self.getDatafromCSV(file, Lecture(1, 'python', 2))
+        division = int(file[-5:-4])
+        lecture = self.getDatafromCSV(file, Lecture(1, 'python', division))
         lecture.syncCodefromLecture()
 
     def filterString(self, data):
