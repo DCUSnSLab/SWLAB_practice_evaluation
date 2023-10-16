@@ -16,9 +16,17 @@ class Evaluator:
         # lecture2 = self.getDatafromCSV('../testdata/python02_test.csv', Lecture(1, 'python', 2))
         # #self.insertIntoDB(lecture2)
         # lecture2.syncCodefromLecture()
+        print(file)
         division = int(file[-5:-4])
-        lecture = self.getDatafromCSV(file, Lecture(1, 'python', division))
-        lecture.syncCodefromLecture()
+        if file.find('python') != -1 :
+            lecture = self.getDatafromCSV(file, Lecture(1, 'python', division))
+            lecture.syncCodefromLecture()
+        elif file.find('system') != -1 :
+            lecture = self.getDatafromCSV(file, Lecture(1, 'system', division))
+            lecture.syncCodefromLecture()
+        else :
+            lecture = self.getDatafromCSV(file, Lecture(1, '?', division))
+            lecture.syncCodefromLecture()
 
     def filterString(self, data):
         return re.sub(r'[^0-9]', '', data)
