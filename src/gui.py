@@ -1,10 +1,21 @@
+from PyQt6.QtCore import QThread, QObject, pyqtSignal as Signal, pyqtSlot as Slot
 from PyQt6.QtWidgets import *
 import sys
 
 from src.evaluator import Evaluator
 
+class LoadWorker(QObject):
+    done_message = Signal()
+    @Slot(str)
+    def do_work(self, fname):#, evaluation, fname, label, lineedit):
+        print('start thread', fname)
+        eval = Evaluator()
+        eval.loadfile(fname)
+        self.done_message.emit()
+        print('end thread')
 
 class Gui(QMainWindow):
+    work_requested = Signal(str)
     def __init__(self):
         super().__init__()
         self.eval = Evaluator()
@@ -36,11 +47,30 @@ class Gui(QMainWindow):
         # layout.addWidget(self.label2)
 
         central_widget.setLayout(layout)
+
+        print('start thread')
+        self.worker = LoadWorker()
+        self.worker_thread = QThread()
+
+        self.work_requested.connect(self.worker.do_work)
+        self.worker.done_message.connect(self.loadFinished)
+
+        self.worker.moveToThread(self.worker_thread)
+        self.worker_thread.start()
+
         self.show()
 
     def load(self):
         fname = QFileDialog.getOpenFileName(self)
-        self.eval.loadfile(fname[0])
+        self.lineedit.setText("file path : %s" % fname[0])
+        self.work_requested.emit(fname[0])
+        #worker = LoadWorker(self.eval, fname=fname[0], label=self.label, lineedit=self.lineedit)
+
+        #self.eval.loadfile(fname[0])
+        # self.label.setText("Clear Git clone & pull")
+        # self.lineedit.setText("file path : %s" %fname[0])
+
+    def loadFinished(self):
         self.label.setText("Clear Git clone & pull")
-        self.lineedit.setText("file path : %s" %fname[0])
+
 
