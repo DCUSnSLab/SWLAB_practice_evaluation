@@ -32,16 +32,20 @@ class Gui(QMainWindow):
 
         layout = QVBoxLayout()
 
-        self.btnLoad = QPushButton("load")
+        self.btnLoad = QPushButton("Load CSV file")
         #btnLoad.move(20, 20)
         self.btnLoad.clicked.connect(self.load)
         layout.addWidget(self.btnLoad)
 
         self.lineedit = QLineEdit(self)
-        self.lineedit.setText('file name : ')
+        self.lineedit.setText('File name : ')
         layout.addWidget(self.lineedit)
 
-        self.label = QLabel('choose file')
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
+        self.label = QLabel('Choose file')
         layout.addWidget(self.label)
         # self.label2 = QLabel('file name : ')
         # layout.addWidget(self.label2)
@@ -62,7 +66,9 @@ class Gui(QMainWindow):
 
     def load(self):
         fname = QFileDialog.getOpenFileName(self)
-        self.lineedit.setText("file path : %s" % fname[0])
+        self.lineedit.setText("File path : %s" % fname[0])
+        self.btnLoad.setText("In progress")
+        self.btnLoad.setDisable(True)
         self.work_requested.emit(fname[0])
         #worker = LoadWorker(self.eval, fname=fname[0], label=self.label, lineedit=self.lineedit)
 
@@ -72,5 +78,7 @@ class Gui(QMainWindow):
 
     def loadFinished(self):
         self.label.setText("Clear Git clone & pull")
+        self.btnLoad.setText("Load CSV file")
+        self.btnLoad.setEnable(True)
 
 
