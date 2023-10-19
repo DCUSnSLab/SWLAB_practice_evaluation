@@ -68,7 +68,7 @@ class Gui(QMainWindow):
         fname = QFileDialog.getOpenFileName(self)
         self.lineedit.setText("File path : %s" % fname[0])
         self.btnLoad.setText("In progress")
-        self.btnLoad.setDisable(True)
+        self.btnLoad.setDisabled(True)
         self.work_requested.emit(fname[0])
         #worker = LoadWorker(self.eval, fname=fname[0], label=self.label, lineedit=self.lineedit)
 
@@ -79,6 +79,6 @@ class Gui(QMainWindow):
     def loadFinished(self):
         self.label.setText("Clear Git clone & pull")
         self.btnLoad.setText("Load CSV file")
-        self.btnLoad.setEnable(True)
+        self.btnLoad.setEnabled(True)
 
 
