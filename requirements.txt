@@ -1,0 +1,8 @@
+git-repo==1.10.3
+GitPython==3.1.37
+PyQt6==6.5.3
+PyQt6-Qt6==6.5.3
+PyQt6-sip==13.6.0
+python-git==2018.2.1
+python-gitlab==3.15.0
+repo==0.3.0
