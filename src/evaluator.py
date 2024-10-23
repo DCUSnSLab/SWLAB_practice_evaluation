@@ -5,10 +5,10 @@ import re
 
 
 
+
 class Evaluator:
     def __init__(self):
         self.id = 0
-
 
     def loadfile(self,file):
         #lecture = self.getDatafromCSV('../testdata/python01.csv', Lecture(0, 'python', 1))
