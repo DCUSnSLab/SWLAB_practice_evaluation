@@ -2,7 +2,9 @@ from PyQt6.QtCore import QThread, QObject, pyqtSignal as Signal, pyqtSlot as Slo
 from PyQt6.QtWidgets import *
 import sys
 
-from src.evaluator import Evaluator
+from evaluator import Evaluator
+from src.lecture import Lecture
+
 
 class LoadWorker(QObject):
     done_message = Signal()
@@ -16,6 +18,7 @@ class LoadWorker(QObject):
 
 class Gui(QMainWindow):
     work_requested = Signal(str)
+
     def __init__(self):
         super().__init__()
         self.eval = Evaluator()
@@ -43,12 +46,11 @@ class Gui(QMainWindow):
 
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(20)
         layout.addWidget(self.progress_bar)
 
         self.label = QLabel('Choose file')
         layout.addWidget(self.label)
-        # self.label2 = QLabel('file name : ')
-        # layout.addWidget(self.label2)
 
         central_widget.setLayout(layout)
 
@@ -58,6 +60,8 @@ class Gui(QMainWindow):
 
         self.work_requested.connect(self.worker.do_work)
         self.worker.done_message.connect(self.loadFinished)
+        # self.lecture.progress_status.connect(self.loadProgress)
+        # self.lecture.progress_max.connect(self.setProgress)
 
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.start()
@@ -68,17 +72,26 @@ class Gui(QMainWindow):
         fname = QFileDialog.getOpenFileName(self)
         self.lineedit.setText("File path : %s" % fname[0])
         self.btnLoad.setText("In progress")
+        self.progress_bar.setValue(0)
         self.btnLoad.setDisabled(True)
         self.work_requested.emit(fname[0])
         #worker = LoadWorker(self.eval, fname=fname[0], label=self.label, lineedit=self.lineedit)
 
-        #self.eval.loadfile(fname[0])
-        # self.label.setText("Clear Git clone & pull")
-        # self.lineedit.setText("file path : %s" %fname[0])
 
     def loadFinished(self):
         self.label.setText("Clear Git clone & pull")
         self.btnLoad.setText("Load CSV file")
         self.btnLoad.setEnabled(True)
+        self.progress_bar.setValue(20)
 
+    # def getPro_value(self,now,max):
+    #     self.progress_status.emit(now)
+    #     self.progress_count.emit(max)
 
+    @Slot(int)
+    def setProgress(self, tcnt):
+        self.progress_bar.setMaximum(tcnt)
+
+    @Slot(int)
+    def loadProgress(self, now):
+        self.progress_bar.setValue(now)
