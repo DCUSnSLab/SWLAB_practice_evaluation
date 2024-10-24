@@ -18,12 +18,12 @@ class Evaluator:
         # #self.insertIntoDB(lecture2)
         # lecture2.syncCodefromLecture()
         print(file)
-        division = int(file[-5:-4])
+        division = int(re.findall(r'\d+', file)[-1])
         if file.find('python') != -1 :
-            lecture = self.getDatafromCSV(file, Lecture(1, 'python', division))
+            lecture = self.getDatafromCSV(file, Lecture(2024, 'python', division))
             lecture.syncCodefromLecture()
         elif file.find('system') != -1 :
-            lecture = self.getDatafromCSV(file, Lecture(1, 'system', division))
+            lecture = self.getDatafromCSV(file, Lecture(2024, 'system', division))
             lecture.syncCodefromLecture()
         else :
             lecture = self.getDatafromCSV(file, Lecture(1, '?', division))
