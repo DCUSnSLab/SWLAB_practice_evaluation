@@ -8,12 +8,16 @@ from src.lecture import Lecture
 
 class LoadWorker(QObject):
     done_message = Signal()
+    set_progress_value = Signal(int)
+    in_progress_message = Signal(int)
     @Slot(str)
     def do_work(self, fname):#, evaluation, fname, label, lineedit):
+        # 파일 호출하면 동작
         print('start thread', fname)
         eval = Evaluator()
         eval.loadfile(fname)
-        self.done_message.emit()
+        self.set_progress_value.emit(eval.sendMaxValue())
+        self.done_message.emit(eval.sendMaxValue())
         print('end thread')
 
 class Gui(QMainWindow):
@@ -26,7 +30,7 @@ class Gui(QMainWindow):
 
     def init_ui(self):
         self.setGeometry(500, 500, 500, 240)
-        self.setWindowTitle('PyQt6 Example')
+        self.setWindowTitle('SWLAB practice evaluation')
 
 
         # Create a central widget
@@ -36,8 +40,7 @@ class Gui(QMainWindow):
         layout = QVBoxLayout()
 
         self.btnLoad = QPushButton("Load CSV file")
-        #btnLoad.move(20, 20)
-        self.btnLoad.clicked.connect(self.load)
+        self.btnLoad.clicked.connect(self.load) #호출함수 선언
         layout.addWidget(self.btnLoad)
 
         self.lineedit = QLineEdit(self)
@@ -46,7 +49,7 @@ class Gui(QMainWindow):
 
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setValue(0)
-        self.progress_bar.setMaximum(20)
+        self.progress_bar.setMaximum(100)
         layout.addWidget(self.progress_bar)
 
         self.label = QLabel('Choose file')
@@ -60,6 +63,8 @@ class Gui(QMainWindow):
 
         self.work_requested.connect(self.worker.do_work)
         self.worker.done_message.connect(self.loadFinished)
+        self.worker.set_progress_value.connect(self.setProgress)
+        self.worker.in_progress_message.connect(self.loadProgress)
         # self.lecture.progress_status.connect(self.loadProgress)
         # self.lecture.progress_max.connect(self.setProgress)
 
@@ -78,20 +83,20 @@ class Gui(QMainWindow):
         #worker = LoadWorker(self.eval, fname=fname[0], label=self.label, lineedit=self.lineedit)
 
 
-    def loadFinished(self):
+    def loadFinished(self, max):
         self.label.setText("Clear Git clone & pull")
         self.btnLoad.setText("Load CSV file")
         self.btnLoad.setEnabled(True)
-        self.progress_bar.setValue(20)
+        self.progress_bar.setValue(max)
 
     # def getPro_value(self,now,max):
     #     self.progress_status.emit(now)
     #     self.progress_count.emit(max)
 
     @Slot(int)
-    def setProgress(self, tcnt):
-        self.progress_bar.setMaximum(tcnt)
+    def setProgress(self, max):
+        self.progress_bar.setMaximum(max)
 
     @Slot(int)
-    def loadProgress(self, now):
+    def loadProgress(self, now): #해결해야함
         self.progress_bar.setValue(now)

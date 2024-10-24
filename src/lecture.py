@@ -30,5 +30,4 @@ class Lecture:
         for idx, l in enumerate(self.getStudentList()):
             logger.info('[%d/%d] [%s-%d] Sync Code'%(idx+1, tcnt, self.name,self.division))
             gg = gitManager(student=l, lec=self)
-            # self.progress_status.emit(tcnt)
             gg.syncCode()

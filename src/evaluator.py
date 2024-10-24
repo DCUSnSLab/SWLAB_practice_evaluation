@@ -3,12 +3,10 @@ from student import Student
 import csv
 import re
 
-
-
-
 class Evaluator:
     def __init__(self):
         self.id = 0
+        self.max = 0
 
     def loadfile(self,file):
         #lecture = self.getDatafromCSV('../testdata/python01.csv', Lecture(0, 'python', 1))
@@ -17,7 +15,6 @@ class Evaluator:
         # lecture2 = self.getDatafromCSV('../testdata/python02_test.csv', Lecture(1, 'python', 2))
         # #self.insertIntoDB(lecture2)
         # lecture2.syncCodefromLecture()
-        print(file)
         division = int(re.findall(r'\d+', file)[-1])
         if file.find('python') != -1 :
             lecture = self.getDatafromCSV(file, Lecture(2024, 'python', division))
@@ -40,8 +37,12 @@ class Evaluator:
             s = Student(int(sid), name=line[1], sid=int(sid))
             s.insertGithubLink(lecture, line[2])
             lecture.addStudent(s)
+            self.max += 1
         f.close()
         return lecture
+
+    def sendMaxValue(self):
+        return self.max
 
     def insertIntoDB(self, lecture:Lecture):
         print('insert db')
