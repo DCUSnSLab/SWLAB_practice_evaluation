@@ -51,7 +51,7 @@ class Gui(QMainWindow):
         self.progress_bar.setMaximum(100)
         layout.addWidget(self.progress_bar)
 
-        self.label = QLabel('Choose file')
+        self.label = QLabel('Select CSV file')
         layout.addWidget(self.label)
 
         self.output_label = QLabel('')
@@ -75,6 +75,9 @@ class Gui(QMainWindow):
 
     def load(self):
         fname = QFileDialog.getOpenFileName(self)
+        if not fname[0]:
+            self.lineedit.setText("No file selected. Try select file again.")
+            return
         self.lineedit.setText("File path : %s" % fname[0])
         self.btnLoad.setText("In progress")
         self.progress_bar.setValue(0)
