@@ -26,8 +26,10 @@ class Lecture:
 
     def syncCodefromLecture(self):
         tcnt = len(self.getStudentList())
-        # self.progress_max.emit(tcnt)
         for idx, l in enumerate(self.getStudentList()):
             logger.info('[%d/%d] [%s-%d] Sync Code'%(idx+1, tcnt, self.name,self.division))
             gg = gitManager(student=l, lec=self)
             gg.syncCode()
+
+    def syncProgressbar(self):
+        pass

@@ -3,11 +3,9 @@ from PyQt6.QtWidgets import *
 import sys
 
 from evaluator import Evaluator
-from src.lecture import Lecture
-
 
 class LoadWorker(QObject):
-    done_message = Signal()
+    done_message = Signal(int)
     set_progress_value = Signal(int)
     in_progress_message = Signal(int)
     @Slot(str)
@@ -16,8 +14,9 @@ class LoadWorker(QObject):
         print('start thread', fname)
         eval = Evaluator()
         eval.loadfile(fname)
-        self.set_progress_value.emit(eval.sendMaxValue())
-        self.done_message.emit(eval.sendMaxValue())
+        max = eval.sendMaxValue()
+        self.set_progress_value.emit(max)
+        self.done_message.emit(max)
         print('end thread')
 
 class Gui(QMainWindow):
@@ -32,7 +31,6 @@ class Gui(QMainWindow):
         self.setGeometry(500, 500, 500, 240)
         self.setWindowTitle('SWLAB practice evaluation')
 
-
         # Create a central widget
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
@@ -45,6 +43,7 @@ class Gui(QMainWindow):
 
         self.lineedit = QLineEdit(self)
         self.lineedit.setText('File name : ')
+        self.lineedit.setReadOnly(True)
         layout.addWidget(self.lineedit)
 
         self.progress_bar = QProgressBar(self)
@@ -54,6 +53,9 @@ class Gui(QMainWindow):
 
         self.label = QLabel('Choose file')
         layout.addWidget(self.label)
+
+        self.output_label = QLabel('')
+        layout.addWidget(self.output_label)
 
         central_widget.setLayout(layout)
 
@@ -65,8 +67,6 @@ class Gui(QMainWindow):
         self.worker.done_message.connect(self.loadFinished)
         self.worker.set_progress_value.connect(self.setProgress)
         self.worker.in_progress_message.connect(self.loadProgress)
-        # self.lecture.progress_status.connect(self.loadProgress)
-        # self.lecture.progress_max.connect(self.setProgress)
 
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.start()
@@ -82,16 +82,12 @@ class Gui(QMainWindow):
         self.work_requested.emit(fname[0])
         #worker = LoadWorker(self.eval, fname=fname[0], label=self.label, lineedit=self.lineedit)
 
-
-    def loadFinished(self, max):
+    @Slot(int)
+    def loadFinished(self,max):
         self.label.setText("Clear Git clone & pull")
         self.btnLoad.setText("Load CSV file")
         self.btnLoad.setEnabled(True)
         self.progress_bar.setValue(max)
-
-    # def getPro_value(self,now,max):
-    #     self.progress_status.emit(now)
-    #     self.progress_count.emit(max)
 
     @Slot(int)
     def setProgress(self, max):
