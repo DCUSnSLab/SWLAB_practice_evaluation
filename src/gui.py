@@ -3,20 +3,23 @@ from PyQt6.QtWidgets import *
 import sys
 
 from evaluator import Evaluator
+from src.lecture import Lecture
+
 
 class LoadWorker(QObject):
-    done_message = Signal(int)
+    done_message = Signal()
     set_progress_value = Signal(int)
     in_progress_message = Signal(int)
+
     @Slot(str)
-    def do_work(self, fname):#, evaluation, fname, label, lineedit):
+    def do_work(self, fname):
         # 파일 호출하면 동작
         print('start thread', fname)
         eval = Evaluator()
+        eval.max_value.connect(self.set_progress_value.emit)
+        eval.progress_status.connect(self.in_progress_message.emit)
         eval.loadfile(fname)
-        max = eval.sendMaxValue()
-        self.set_progress_value.emit(max)
-        self.done_message.emit(max)
+        self.done_message.emit()
         print('end thread')
 
 class Gui(QMainWindow):
@@ -67,30 +70,26 @@ class Gui(QMainWindow):
         self.worker.done_message.connect(self.loadFinished)
         self.worker.set_progress_value.connect(self.setProgress)
         self.worker.in_progress_message.connect(self.loadProgress)
-
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.start()
 
         self.show()
 
     def load(self):
+        self.progress_bar.setValue(0)
         fname = QFileDialog.getOpenFileName(self)
         if not fname[0]:
             self.lineedit.setText("No file selected. Try select file again.")
             return
         self.lineedit.setText("File path : %s" % fname[0])
         self.btnLoad.setText("In progress")
-        self.progress_bar.setValue(0)
         self.btnLoad.setDisabled(True)
         self.work_requested.emit(fname[0])
-        #worker = LoadWorker(self.eval, fname=fname[0], label=self.label, lineedit=self.lineedit)
 
-    @Slot(int)
-    def loadFinished(self,max):
+    def loadFinished(self):
         self.label.setText("Clear Git clone & pull")
         self.btnLoad.setText("Load CSV file")
         self.btnLoad.setEnabled(True)
-        self.progress_bar.setValue(max)
 
     @Slot(int)
     def setProgress(self, max):

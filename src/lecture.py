@@ -4,8 +4,6 @@ from setup_logging import logger
 from student import Student
 
 class Lecture:
-    progress_status = Signal(int)
-    progress_max = Signal(int)
     def __init__(self, id:int, name:str, division:int):
         self.id = id
         self.name = name
@@ -24,12 +22,11 @@ class Lecture:
     def getStudentbySID(self, sid:int) -> Student:
         return self.students[sid]
 
-    def syncCodefromLecture(self):
+    def syncCodefromLecture(self,progress_signal):
         tcnt = len(self.getStudentList())
         for idx, l in enumerate(self.getStudentList()):
             logger.info('[%d/%d] [%s-%d] Sync Code'%(idx+1, tcnt, self.name,self.division))
             gg = gitManager(student=l, lec=self)
             gg.syncCode()
 
-    def syncProgressbar(self):
-        pass
+            progress_signal.emit(idx+1)

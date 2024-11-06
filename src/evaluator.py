@@ -2,9 +2,14 @@ from lecture import Lecture
 from student import Student
 import csv
 import re
+from PyQt6.QtCore import QObject, pyqtSignal as Signal
 
-class Evaluator:
+class Evaluator(QObject):
+    progress_status = Signal(int)
+    max_value = Signal(int)
+
     def __init__(self):
+        super().__init__()
         self.id = 0
         self.max = 0
 
@@ -18,13 +23,13 @@ class Evaluator:
         division = int(re.findall(r'\d+', file)[-1])
         if file.find('python') != -1 :
             lecture = self.getDatafromCSV(file, Lecture(2024, 'python', division))
-            lecture.syncCodefromLecture()
+            lecture.syncCodefromLecture(self.progress_status)
         elif file.find('system') != -1 :
             lecture = self.getDatafromCSV(file, Lecture(2024, 'system', division))
-            lecture.syncCodefromLecture()
+            lecture.syncCodefromLecture(self.progress_status)
         else :
             lecture = self.getDatafromCSV(file, Lecture(1, '?', division))
-            lecture.syncCodefromLecture()
+            lecture.syncCodefromLecture(self.progress_status)
 
     def filterString(self, data):
         return re.sub(r'[^0-9]', '', data)
@@ -39,10 +44,8 @@ class Evaluator:
             lecture.addStudent(s)
             self.max += 1
         f.close()
+        self.max_value.emit(self.max)
         return lecture
-
-    def sendMaxValue(self):
-        return self.max
 
     def insertIntoDB(self, lecture:Lecture):
         print('insert db')
@@ -50,5 +53,3 @@ class Evaluator:
         for std in lecture.getStudentList():
             self.db.insertStudent(lecture, std)
         #database.insertLecture(lecture)
-
-
