@@ -7,6 +7,7 @@ from PyQt6.QtCore import QObject, pyqtSignal as Signal
 class Evaluator(QObject):
     progress_status = Signal(int)
     max_value = Signal(int)
+    log_message = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -23,13 +24,12 @@ class Evaluator(QObject):
         division = int(re.findall(r'\d+', file)[-1])
         if file.find('python') != -1 :
             lecture = self.getDatafromCSV(file, Lecture(2024, 'python', division))
-            lecture.syncCodefromLecture(self.progress_status)
         elif file.find('system') != -1 :
             lecture = self.getDatafromCSV(file, Lecture(2024, 'system', division))
-            lecture.syncCodefromLecture(self.progress_status)
         else :
             lecture = self.getDatafromCSV(file, Lecture(1, '?', division))
-            lecture.syncCodefromLecture(self.progress_status)
+        lecture.log_message.connect(self.log_message.emit)
+        lecture.syncCodefromLecture(self.progress_status)
 
     def filterString(self, data):
         return re.sub(r'[^0-9]', '', data)
