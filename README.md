@@ -20,3 +20,7 @@ git 설치 필요 <br>
 <h3>패키지 설치</h3>
 
     pip install -r .\requirements.txt
+
+<h3>코드 실행을 위한 컨테이너 생성</h3>
+
+    docker-compose up -d
