@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  grader:
+    build: .
+    image: grader-image
+    container_name: grader-container
+    volumes:
+      - .:/app
+    command: tail -f /dev/null
+    restart: always
