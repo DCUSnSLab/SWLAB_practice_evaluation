@@ -139,11 +139,31 @@ class Gui(QMainWindow):
         file_group = QGroupBox("Submitted Files")
         file_layout = QVBoxLayout()
         self.listFiles = QListWidget()
+        self.listFiles.itemDoubleClicked.connect(self.onFileDoubleClicked)
         file_layout.addWidget(self.listFiles)
+        
+        self.btnRefreshFiles = QPushButton("Refresh")
+        self.btnRefreshFiles.clicked.connect(self.updateFileList)
+        file_layout.addWidget(self.btnRefreshFiles)
+        
+        self.btnAddFile = QPushButton("+ Add File")
+        self.btnAddFile.clicked.connect(self.addFile)
+        file_layout.addWidget(self.btnAddFile)
+        
         file_group.setLayout(file_layout)
         mid_layout.addWidget(file_group, 1) # Ratio 1
 
-        # Right: Tabs for Grading & Manual Run
+        # Right Side Layout (Preview + Tabs)
+        right_side_layout = QVBoxLayout()
+        
+        # Code Preview (Top of Right Side)
+        right_side_layout.addWidget(QLabel("Code Preview (Double-click file to view):"))
+        self.txtCodePreview = QTextEdit()
+        self.txtCodePreview.setReadOnly(True)
+        # self.txtCodePreview.setMaximumHeight(200) # Optional
+        right_side_layout.addWidget(self.txtCodePreview)
+
+        # Tabs (Bottom of Right Side)
         self.right_tabs = QTabWidget()
         
         # Tab 1: Grading Result
@@ -159,10 +179,32 @@ class Gui(QMainWindow):
         self.tab_manual = QWidget()
         manual_layout = QVBoxLayout()
         
+        manual_layout.addWidget(QLabel("Arguments:"))
+        self.txtManualArgs = QLineEdit()
+        self.txtManualArgs.setPlaceholderText("e.g. arg1 arg2 (Full paths will be copied automatically)")
+        manual_layout.addWidget(self.txtManualArgs)
+
         manual_layout.addWidget(QLabel("Input(Stdin):"))
         self.txtManualInput = QTextEdit()
         self.txtManualInput.setMaximumHeight(100)
         manual_layout.addWidget(self.txtManualInput)
+        
+        # Aux File Section
+        aux_group = QGroupBox("Create File (Optional)")
+        aux_layout = QVBoxLayout()
+        aux_name_layout = QHBoxLayout()
+        aux_name_layout.addWidget(QLabel("Filename (e.g. data.txt):"))
+        self.txtAuxFileName = QLineEdit()
+        aux_name_layout.addWidget(self.txtAuxFileName)
+        aux_layout.addLayout(aux_name_layout)
+        
+        aux_layout.addWidget(QLabel("Content:"))
+        self.txtAuxFileContent = QTextEdit()
+        self.txtAuxFileContent.setMaximumHeight(80) # Keep it compact
+        aux_layout.addWidget(self.txtAuxFileContent)
+        aux_group.setLayout(aux_layout)
+        
+        manual_layout.addWidget(aux_group)
         
         self.btnRunManual = QPushButton("Run Code (Single Student)")
         self.btnRunManual.clicked.connect(self.runManual)
@@ -175,8 +217,10 @@ class Gui(QMainWindow):
         
         self.tab_manual.setLayout(manual_layout)
         self.right_tabs.addTab(self.tab_manual, "Manual Execution")
+        
+        right_side_layout.addWidget(self.right_tabs)
 
-        mid_layout.addWidget(self.right_tabs, 2) # Ratio 2
+        mid_layout.addLayout(right_side_layout, 2) # Ratio 2
 
         main_layout.addLayout(mid_layout)
 
@@ -320,6 +364,7 @@ class Gui(QMainWindow):
 
     def updateFileList(self):
         self.listFiles.clear()
+        self.txtCodePreview.clear() # Clear preview on list update
         
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
@@ -336,6 +381,28 @@ class Gui(QMainWindow):
         
         files = self.eval.get_student_files(class_name, student_id, chapter, problem)
         self.listFiles.addItems(files)
+
+    def onFileDoubleClicked(self, item):
+        filename = item.text()
+        
+        class_name = self.comboClass.currentData()
+        chapter = self.comboChapter.currentText()
+        problem = self.comboProblem.currentText()
+        
+        if self.comboProblem.isHidden():
+            problem = None
+            
+        selected_items = self.listStudents.selectedItems()
+        if not selected_items:
+            return
+        student_id = selected_items[0].text()
+        
+        content = self.eval.get_file_content(class_name, student_id, chapter, problem, filename)
+        
+        # Preview is now shared, no need to switch tab
+        # self.right_tabs.setCurrentWidget(self.tab_manual)
+        
+        self.txtCodePreview.setText(content)
 
     def updateTestCasePath(self):
         class_name = self.comboClass.currentData()
@@ -365,6 +432,34 @@ class Gui(QMainWindow):
         path = QFileDialog.getExistingDirectory(self, "Select Test Case Directory")
         if path:
             self.txtTestCasePath.setText(path)
+
+    def addFile(self):
+        class_name = self.comboClass.currentData()
+        chapter = self.comboChapter.currentText()
+        problem = self.comboProblem.currentText()
+        
+        selected_items = self.listStudents.selectedItems()
+        if not selected_items or not class_name:
+             QMessageBox.warning(self, "Warning", "Please select a class and student first.")
+             return
+             
+        student_id = selected_items[0].text()
+        
+        fname = QFileDialog.getOpenFileName(self, "Select File to Add")
+        if not fname[0]:
+            return
+            
+        success, msg = self.eval.add_student_file(class_name, student_id, chapter, problem, fname[0])
+        
+        if success:
+            self.updateFileList()
+            QMessageBox.information(self, "Success", f"File added: {os.path.basename(fname[0])}")
+        else:
+            QMessageBox.critical(self, "Error", f"Failed to add file: {msg}")
+
+
+
+
 
     def buildDockerImage(self):
         self.log_output.append("<b>Building Docker Image...</b>")
@@ -456,12 +551,31 @@ class Gui(QMainWindow):
             target_file = file_selection[0].text()
         
         input_data = self.txtManualInput.toPlainText()
+        args_str = self.txtManualArgs.text()
+        final_args = args_str.split()
         
+        # Auxiliary File Creation
+        aux_filename = self.txtAuxFileName.text().strip()
+        aux_content = self.txtAuxFileContent.toPlainText()
+        
+        if aux_filename:
+             success, msg = self.eval.create_file_from_string(class_name, student_id, chapter, problem, aux_filename, aux_content)
+             if success:
+                 self.log_output.append(f"Created aux file: {aux_filename}")
+                 # self.updateFileList() # Optional: Refresh list to show it? Yes, good UX.
+             else:
+                 self.log_output.append(f"<span style='color:red;'>Failed to create aux file: {msg}</span>")
+
         msg = f"Running {target_file if target_file else 'Default'}..."
+        if final_args:
+             msg += f" with args: {final_args}"
         self.txtManualOutput.setText(msg)
         self.txtManualOutput.repaint() # Force update
         
-        success, stdout, stderr = self.eval.run_manual_code(class_name, student_id, runner_config, input_data, target_file)
+        success, stdout, stderr = self.eval.run_manual_code(class_name, student_id, runner_config, input_data, final_args, target_file)
+        
+        if aux_filename:
+            self.updateFileList() # Update list after run to see created file
         
         output_msg = ""
         if success:

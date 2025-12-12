@@ -252,7 +252,59 @@ class Evaluator(QObject):
             
             self.log_message.emit(log_str)
 
-    def run_manual_code(self, class_name, student_id, runner_config, input_data, target_file=None):
+    def get_file_content(self, class_name, student_id, chapter, problem, filename):
+        origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
+        target_path = os.path.join(origin_path, class_name, student_id)
+        
+        if chapter: target_path = os.path.join(target_path, chapter)
+        if problem: target_path = os.path.join(target_path, problem)
+        
+        file_path = os.path.join(target_path, filename)
+        
+        if not os.path.exists(file_path):
+            return f"Error: File not found {file_path}"
+            
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                return f.read()
+        except Exception as e:
+            return f"Error reading file: {e}"
+
+    def add_student_file(self, class_name, student_id, chapter, problem, src_file):
+        origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
+        target_path = os.path.join(origin_path, class_name, student_id)
+        
+        if chapter: target_path = os.path.join(target_path, chapter)
+        if problem: target_path = os.path.join(target_path, problem)
+        
+        if not os.path.exists(target_path):
+            return False, f"Target directory does not exist: {target_path}"
+            
+        try:
+            shutil.copy(src_file, target_path)
+            return True, "File added successfully."
+        except Exception as e:
+            return False, str(e)
+
+    def create_file_from_string(self, class_name, student_id, chapter, problem, filename, content):
+        origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
+        target_path = os.path.join(origin_path, class_name, student_id)
+        
+        if chapter: target_path = os.path.join(target_path, chapter)
+        if problem: target_path = os.path.join(target_path, problem)
+        
+        if not os.path.exists(target_path):
+            return False, f"Target path not found: {target_path}"
+            
+        full_path = os.path.join(target_path, filename)
+        try:
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True, f"File {filename} created."
+        except Exception as e:
+            return False, f"Error creating file: {e}"
+
+    def run_manual_code(self, class_name, student_id, runner_config, input_data, args=[], target_file=None):
         origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
         target_dir = os.path.join(origin_path, class_name, student_id)
         
@@ -265,4 +317,4 @@ class Evaluator(QObject):
         if not os.path.exists(target_dir):
             return False, "", f"Directory not found: {target_dir}"
             
-        return self.grader.run_code(target_dir, input_data, [], runner_config, target_file=target_file)
+        return self.grader.run_code(target_dir, input_data, args, runner_config, target_file=target_file)
