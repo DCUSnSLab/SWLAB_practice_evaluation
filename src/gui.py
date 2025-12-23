@@ -99,12 +99,14 @@ class Gui(QMainWindow):
         # Execution Mode Selection
         mode_group = QGroupBox("Env")
         mode_layout = QHBoxLayout()
-        self.radioWin = QRadioButton("Win")
+        self.radioWin = QRadioButton("Windows") # Renamed from Win
         self.radioWSL = QRadioButton("WSL")
+        self.radioLinux = QRadioButton("Linux") # Renamed from Local(Linux)
         self.radioDocker = QRadioButton("Docker")
         self.radioDocker.setChecked(True)
         mode_layout.addWidget(self.radioWin)
         mode_layout.addWidget(self.radioWSL)
+        mode_layout.addWidget(self.radioLinux)
         mode_layout.addWidget(self.radioDocker)
         mode_layout.setContentsMargins(0,0,0,0)
         mode_group.setLayout(mode_layout)
@@ -586,6 +588,7 @@ class Gui(QMainWindow):
         # Determine Mode
         mode = 'windows'
         if self.radioWSL.isChecked(): mode = 'wsl'
+        elif self.radioLinux.isChecked(): mode = 'linux'
         elif self.radioDocker.isChecked(): mode = 'docker'
 
         runner_config = {

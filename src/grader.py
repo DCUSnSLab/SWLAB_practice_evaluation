@@ -112,6 +112,23 @@ class Grader(QObject):
                 
                 cmd = ['wsl', wsl_out] + args
         
+        elif mode == 'linux':
+            # Local Linux Execution
+            if lang == 'python':
+                cmd = ['python3', current_py] + args
+            elif lang == 'c':
+                 exe_out = os.path.join(target_dir, 'main')
+                 # Linux native compilation
+                 # We use sh -c to handle *.c wildcard comfortably
+                 compile_cmd = f'gcc -o "{exe_out}" "{target_dir}"/*.c'
+                 try:
+                    # check=True raises CalledProcessError on failure
+                    subprocess.run(compile_cmd, check=True, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    cleanup_file = exe_out
+                    cmd = [exe_out] + args
+                 except subprocess.CalledProcessError as e:
+                     return False, "", f"Compilation Failed (Linux):\n{e.stderr.decode('utf-8')}"
+        
         else: # Windows (Default)
             if lang == 'python':
                 cmd = ['python', current_py] + args
