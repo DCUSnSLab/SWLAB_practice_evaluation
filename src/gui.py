@@ -150,6 +150,10 @@ class Gui(QMainWindow):
         self.btnAddFile.clicked.connect(self.addFile)
         file_layout.addWidget(self.btnAddFile)
         
+        self.btnDeleteFile = QPushButton("- Delete File")
+        self.btnDeleteFile.clicked.connect(self.deleteFile)
+        file_layout.addWidget(self.btnDeleteFile)
+        
         file_group.setLayout(file_layout)
         mid_layout.addWidget(file_group, 1) # Ratio 1
 
@@ -189,22 +193,33 @@ class Gui(QMainWindow):
         self.txtManualInput.setMaximumHeight(100)
         manual_layout.addWidget(self.txtManualInput)
         
-        # Aux File Section
-        aux_group = QGroupBox("Create File (Optional)")
-        aux_layout = QVBoxLayout()
-        aux_name_layout = QHBoxLayout()
-        aux_name_layout.addWidget(QLabel("Filename (e.g. data.txt):"))
-        self.txtAuxFileName = QLineEdit()
-        aux_name_layout.addWidget(self.txtAuxFileName)
-        aux_layout.addLayout(aux_name_layout)
+        # Aux File Section (Multiple Files)
+        aux_group = QGroupBox("Create Files (Optional)")
+        aux_main_layout = QVBoxLayout()
         
-        aux_layout.addWidget(QLabel("Content:"))
-        self.txtAuxFileContent = QTextEdit()
-        self.txtAuxFileContent.setMaximumHeight(80) # Keep it compact
-        aux_layout.addWidget(self.txtAuxFileContent)
-        aux_group.setLayout(aux_layout)
+        # Toolbar
+        toolbar_layout = QHBoxLayout()
+        self.btnAddAux = QPushButton("+")
+        self.btnAddAux.setFixedWidth(30)
+        self.btnAddAux.clicked.connect(self.addAuxTab)
+        self.btnRemoveAux = QPushButton("-")
+        self.btnRemoveAux.setFixedWidth(30)
+        self.btnRemoveAux.clicked.connect(self.removeAuxTab)
+        toolbar_layout.addWidget(QLabel("Add/Remove Files:"))
+        toolbar_layout.addWidget(self.btnAddAux)
+        toolbar_layout.addWidget(self.btnRemoveAux)
+        toolbar_layout.addStretch()
+        aux_main_layout.addLayout(toolbar_layout)
         
+        # Tabs
+        self.aux_tabs = QTabWidget()
+        aux_main_layout.addWidget(self.aux_tabs)
+        
+        aux_group.setLayout(aux_main_layout)
         manual_layout.addWidget(aux_group)
+        
+        # Add initial empty tab
+        self.addAuxTab()
         
         self.btnRunManual = QPushButton("Run Code (Single Student)")
         self.btnRunManual.clicked.connect(self.runManual)
@@ -433,6 +448,32 @@ class Gui(QMainWindow):
         if path:
             self.txtTestCasePath.setText(path)
 
+
+    def addAuxTab(self):
+        page = QWidget()
+        layout = QVBoxLayout()
+        
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Filename:"))
+        txt_name = QLineEdit()
+        txt_name.setPlaceholderText("e.g. input.txt")
+        name_layout.addWidget(txt_name)
+        layout.addLayout(name_layout)
+        
+        layout.addWidget(QLabel("Content:"))
+        txt_content = QTextEdit()
+        # txt_content.setMaximumHeight(80) 
+        layout.addWidget(txt_content)
+        
+        page.setLayout(layout)
+        self.aux_tabs.addTab(page, f"File {self.aux_tabs.count() + 1}")
+        self.aux_tabs.setCurrentWidget(page)
+
+    def removeAuxTab(self):
+        idx = self.aux_tabs.currentIndex()
+        if idx >= 0:
+            self.aux_tabs.removeTab(idx)
+
     def addFile(self):
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
@@ -457,9 +498,32 @@ class Gui(QMainWindow):
         else:
             QMessageBox.critical(self, "Error", f"Failed to add file: {msg}")
 
-
-
-
+    def deleteFile(self):
+        class_name = self.comboClass.currentData()
+        chapter = self.comboChapter.currentText()
+        problem = self.comboProblem.currentText()
+        
+        selected_students = self.listStudents.selectedItems()
+        selected_files = self.listFiles.selectedItems()
+        
+        if not selected_students or not selected_files or not class_name:
+             QMessageBox.warning(self, "Warning", "Please select a student and a file to delete.")
+             return
+             
+        student_id = selected_students[0].text()
+        filename = selected_files[0].text()
+        
+        confirm = QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to delete '{filename}'?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                                       
+        if confirm == QMessageBox.StandardButton.Yes:
+            success, msg = self.eval.delete_student_file(class_name, student_id, chapter, problem, filename)
+            if success:
+                self.updateFileList()
+                self.txtCodePreview.clear() # Clear preview if deleted
+                QMessageBox.information(self, "Success", f"Deleted {filename}")
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to delete: {msg}")
 
     def buildDockerImage(self):
         self.log_output.append("<b>Building Docker Image...</b>")
@@ -554,17 +618,28 @@ class Gui(QMainWindow):
         args_str = self.txtManualArgs.text()
         final_args = args_str.split()
         
-        # Auxiliary File Creation
-        aux_filename = self.txtAuxFileName.text().strip()
-        aux_content = self.txtAuxFileContent.toPlainText()
+        final_args = args_str.split()
         
-        if aux_filename:
-             success, msg = self.eval.create_file_from_string(class_name, student_id, chapter, problem, aux_filename, aux_content)
-             if success:
-                 self.log_output.append(f"Created aux file: {aux_filename}")
-                 # self.updateFileList() # Optional: Refresh list to show it? Yes, good UX.
-             else:
-                 self.log_output.append(f"<span style='color:red;'>Failed to create aux file: {msg}</span>")
+        # Auxiliary File Creation (Multiple)
+        created_any = False
+        for i in range(self.aux_tabs.count()):
+            page = self.aux_tabs.widget(i)
+            # Find widgets in the page layout
+            # Note: We rely on type finding. Page has QLineEdit and QTextEdit.
+            txt_name = page.findChild(QLineEdit)
+            txt_content = page.findChild(QTextEdit)
+            
+            if txt_name and txt_content:
+                aux_filename = txt_name.text().strip()
+                aux_content = txt_content.toPlainText()
+                
+                if aux_filename:
+                    success, msg = self.eval.create_file_from_string(class_name, student_id, chapter, problem, aux_filename, aux_content)
+                    if success:
+                        self.log_output.append(f"Created aux file: {aux_filename}")
+                        created_any = True
+                    else:
+                        self.log_output.append(f"<span style='color:red;'>Failed to create aux file {aux_filename}: {msg}</span>")
 
         msg = f"Running {target_file if target_file else 'Default'}..."
         if final_args:
@@ -574,7 +649,7 @@ class Gui(QMainWindow):
         
         success, stdout, stderr = self.eval.run_manual_code(class_name, student_id, runner_config, input_data, final_args, target_file)
         
-        if aux_filename:
+        if created_any:
             self.updateFileList() # Update list after run to see created file
         
         output_msg = ""

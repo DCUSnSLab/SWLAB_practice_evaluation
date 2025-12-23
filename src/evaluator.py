@@ -304,6 +304,26 @@ class Evaluator(QObject):
         except Exception as e:
             return False, f"Error creating file: {e}"
 
+
+
+    def delete_student_file(self, class_name, student_id, chapter, problem, filename):
+        origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
+        target_path = os.path.join(origin_path, class_name, student_id)
+        
+        if chapter: target_path = os.path.join(target_path, chapter)
+        if problem: target_path = os.path.join(target_path, problem)
+        
+        file_path = os.path.join(target_path, filename)
+        
+        if not os.path.exists(file_path):
+            return False, "File not found."
+            
+        try:
+            os.remove(file_path)
+            return True, "File deleted."
+        except Exception as e:
+            return False, f"Error deleting file: {e}"
+
     def run_manual_code(self, class_name, student_id, runner_config, input_data, args=[], target_file=None):
         origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
         target_dir = os.path.join(origin_path, class_name, student_id)
