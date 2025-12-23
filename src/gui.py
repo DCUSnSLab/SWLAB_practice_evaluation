@@ -61,7 +61,7 @@ class Gui(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setGeometry(500, 500, 1000, 700)
+        self.setGeometry(100, 100, 1400, 800) # Increased size for 4 columns
         self.setWindowTitle('SWLAB practice evaluation')
 
         main_layout = QVBoxLayout()
@@ -79,17 +79,23 @@ class Gui(QMainWindow):
         self.comboClass.currentIndexChanged.connect(self.onClassSelected)
         top_layout.addWidget(self.comboClass)
         
-        top_layout.addWidget(QLabel("Chapter:"))
+        # Chapter & Problem Selection
+        cp_layout = QHBoxLayout()
+        cp_layout.addWidget(QLabel("Chapter:"))
         self.comboChapter = QComboBox()
-        self.comboChapter.currentIndexChanged.connect(self.onChapterSelected)
-        top_layout.addWidget(self.comboChapter)
+        self.comboChapter.setMinimumWidth(150) # Increased width
+        self.comboChapter.currentTextChanged.connect(self.onChapterSelected)
+        cp_layout.addWidget(self.comboChapter)
         
         self.lblProblem = QLabel("Problem:")
-        top_layout.addWidget(self.lblProblem)
+        cp_layout.addWidget(self.lblProblem)
         self.comboProblem = QComboBox()
-        self.comboProblem.currentIndexChanged.connect(self.onProblemChanged)
-        top_layout.addWidget(self.comboProblem)
-
+        self.comboProblem.setMinimumWidth(150) # Increased width
+        self.comboProblem.currentTextChanged.connect(self.onProblemChanged)
+        cp_layout.addWidget(self.comboProblem)
+        
+        top_layout.addLayout(cp_layout) # Corrected placement for cp_layout
+        
         # Execution Mode Selection
         mode_group = QGroupBox("Env")
         mode_layout = QHBoxLayout()
@@ -157,17 +163,7 @@ class Gui(QMainWindow):
         file_group.setLayout(file_layout)
         mid_layout.addWidget(file_group, 1) # Ratio 1
 
-        # Right Side Layout (Preview + Tabs)
-        right_side_layout = QVBoxLayout()
-        
-        # Code Preview (Top of Right Side)
-        right_side_layout.addWidget(QLabel("Code Preview (Double-click file to view):"))
-        self.txtCodePreview = QTextEdit()
-        self.txtCodePreview.setReadOnly(True)
-        # self.txtCodePreview.setMaximumHeight(200) # Optional
-        right_side_layout.addWidget(self.txtCodePreview)
-
-        # Tabs (Bottom of Right Side)
+        # Column 3: Tabs for Grading & Manual Run
         self.right_tabs = QTabWidget()
         
         # Tab 1: Grading Result
@@ -233,9 +229,18 @@ class Gui(QMainWindow):
         self.tab_manual.setLayout(manual_layout)
         self.right_tabs.addTab(self.tab_manual, "Manual Execution")
         
-        right_side_layout.addWidget(self.right_tabs)
+        mid_layout.addWidget(self.right_tabs, 2) # Ratio 2 (Column 3)
 
-        mid_layout.addLayout(right_side_layout, 2) # Ratio 2
+        # Column 4: Code Preview (New far right column)
+        preview_group = QGroupBox("Code Preview (Double-click file to view)")
+        preview_layout = QVBoxLayout()
+        self.txtCodePreview = QTextEdit()
+        self.txtCodePreview.setReadOnly(True)
+        # self.txtCodePreview.setFont(QFont("Consolas", 10)) # Optional: Monospace font if imported
+        preview_layout.addWidget(self.txtCodePreview)
+        preview_group.setLayout(preview_layout)
+        
+        mid_layout.addWidget(preview_group, 2) # Ratio 2 (Column 4)
 
         main_layout.addLayout(mid_layout)
 
@@ -337,9 +342,22 @@ class Gui(QMainWindow):
         
         self.comboChapter.blockSignals(False)
         
-        # Manually trigger problem update if chapter matches (or first item selected)
+        self.comboChapter.blockSignals(False)
+        
+        # Handle empty chapters or valid selection
         if self.comboChapter.count() > 0:
              self.onChapterSelected()
+        else:
+             # Explicitly clear downstream if no chapters found (empty student folder)
+             self.comboProblem.clear()
+             self.listFiles.clear()
+             self.txtCodePreview.clear()
+             # Optional: Visual indicator? For now, clearing is enough.
+             self.comboChapter.addItem("(No Files)")
+             self.comboChapter.setEnabled(False)
+        
+        if self.comboChapter.count() > 0 and self.comboChapter.itemText(0) != "(No Files)":
+            self.comboChapter.setEnabled(True)
 
     def onChapterSelected(self):
         current_problem = self.comboProblem.currentText()

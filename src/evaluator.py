@@ -167,9 +167,13 @@ class Evaluator(QObject):
         for entry in os.listdir(student_path):
             full_path = os.path.join(student_path, entry)
             if os.path.isdir(full_path):
-                if entry not in ['.git', '__pycache__']:
+                if not entry.startswith('.') and entry != '__pycache__':
                     chapters.append(entry)
-        return sorted(chapters)
+        
+        def natural_key(text):
+            return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', text)]
+
+        return sorted(chapters, key=natural_key)
 
     def get_student_problems(self, class_name, student_id, chapter):
         origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
