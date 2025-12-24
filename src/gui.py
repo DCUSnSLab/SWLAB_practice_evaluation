@@ -1,7 +1,10 @@
+import subprocess
+
 from PyQt6.QtCore import QThread, QObject, pyqtSignal as Signal, pyqtSlot as Slot
 from PyQt6.QtWidgets import *
 import sys
 import os
+import shutil # Added for file operations
 from evaluator import Evaluator
 
 class LoadWorker(QObject):
@@ -230,6 +233,8 @@ class Gui(QMainWindow):
         
         self.tab_manual.setLayout(manual_layout)
         self.right_tabs.addTab(self.tab_manual, "Manual Execution")
+        
+
         
         mid_layout.addWidget(self.right_tabs, 2) # Ratio 2 (Column 3)
 
@@ -605,6 +610,8 @@ class Gui(QMainWindow):
             self.eval.start_grading(class_name, student_id, test_case_dir, runner_config)
         
         self.log_output.append("<b>Grading Finished.</b>")
+
+
 
     def runManual(self):
         class_name = self.comboClass.currentData()
