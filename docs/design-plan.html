@@ -1,0 +1,791 @@
+<title>채점 시스템 설계 계획서</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F5F7F8;
+    --surface: #FFFFFF;
+    --sunk: #EAEFF1;
+    --ink: #16232A;
+    --ink-soft: #4A5C66;
+    --ink-faint: #7C8C95;
+    --rule: #D5DEE2;
+    --rule-soft: #E6ECEE;
+    --accent: #0F6E72;
+    --accent-wash: #E2EFEF;
+    --crit: #A62A21;
+    --crit-wash: #F7E8E6;
+    --warn: #8A5A00;
+    --warn-wash: #F8EFDC;
+    --ok: #1E6B3E;
+    --ok-wash: #E4F0E8;
+    --tok-key: #0F6E72;
+    --tok-str: #8A5A00;
+    --tok-com: #8A99A0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1417;
+      --surface: #141E22;
+      --sunk: #101A1D;
+      --ink: #E4EAEC;
+      --ink-soft: #A5B4BA;
+      --ink-faint: #76888F;
+      --rule: #26343A;
+      --rule-soft: #1C282D;
+      --accent: #4FB8BC;
+      --accent-wash: #13302F;
+      --crit: #EA8177;
+      --crit-wash: #2E1917;
+      --warn: #DCA945;
+      --warn-wash: #2B2312;
+      --ok: #74C290;
+      --ok-wash: #14271C;
+      --tok-key: #6FCBCE;
+      --tok-str: #D9A85C;
+      --tok-com: #6B7C83;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D1417;
+    --surface: #141E22;
+    --sunk: #101A1D;
+    --ink: #E4EAEC;
+    --ink-soft: #A5B4BA;
+    --ink-faint: #76888F;
+    --rule: #26343A;
+    --rule-soft: #1C282D;
+    --accent: #4FB8BC;
+    --accent-wash: #13302F;
+    --crit: #EA8177;
+    --crit-wash: #2E1917;
+    --warn: #DCA945;
+    --warn-wash: #2B2312;
+    --ok: #74C290;
+    --ok-wash: #14271C;
+    --tok-key: #6FCBCE;
+    --tok-str: #D9A85C;
+    --tok-com: #6B7C83;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans KR', system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 62px;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Archivo', 'IBM Plex Sans KR', system-ui, sans-serif;
+    font-weight: 700;
+    text-wrap: balance;
+    margin: 0;
+    line-height: 1.25;
+    letter-spacing: -.015em;
+  }
+  h1 { font-size: clamp(30px, 4.4vw, 44px); }
+  h2 { font-size: clamp(22px, 2.6vw, 27px); }
+  h3 { font-size: 17px; font-weight: 600; letter-spacing: -.005em; }
+  h4 { font-size: 14.5px; font-weight: 600; }
+  p { margin: 0; }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  code {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: .875em;
+    background: var(--sunk);
+    padding: .12em .38em;
+    border-radius: 3px;
+  }
+
+  pre {
+    margin: 0;
+    background: var(--sunk);
+    border: 1px solid var(--rule-soft);
+    border-radius: 4px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 12.5px;
+    line-height: 1.68;
+    color: var(--ink);
+    tab-size: 2;
+  }
+  pre .k { color: var(--tok-key); }
+  pre .s { color: var(--tok-str); }
+  pre .c { color: var(--tok-com); }
+  pre .b { color: var(--ink); font-weight: 500; }
+
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-bottom: 34px;
+    border-bottom: 2px solid var(--ink);
+  }
+  .masthead .kicker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    align-items: baseline;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .masthead .kicker strong { color: var(--ink-soft); font-weight: 500; }
+  .lede {
+    font-size: clamp(17px, 2vw, 20px);
+    line-height: 1.6;
+    color: var(--ink-soft);
+    max-width: 62ch;
+  }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  section { display: flex; flex-direction: column; gap: 24px; }
+  .sec-head { display: flex; flex-direction: column; gap: 9px; }
+  .sec-head p { color: var(--ink-soft); max-width: 70ch; }
+  .prose { max-width: 70ch; color: var(--ink-soft); display: flex; flex-direction: column; gap: 14px; }
+  .prose b, .prose strong { color: var(--ink); font-weight: 600; }
+
+  /* goals */
+  .goals { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+  .goal { background: var(--surface); padding: 18px 22px; display: grid; grid-template-columns: 62px 1fr 108px; gap: 18px; align-items: start; }
+  .goal .tag { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--accent); font-weight: 500; padding-top: 2px; }
+  .goal h3 { margin-bottom: 4px; }
+  .goal p { font-size: 14px; color: var(--ink-soft); }
+  .goal .state { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; text-align: right; padding-top: 3px; }
+  .goal .state.done { color: var(--ok); }
+  .goal .state.part { color: var(--warn); }
+  .goal .state.none { color: var(--crit); }
+  @media (max-width: 700px) {
+    .goal { grid-template-columns: 1fr; gap: 6px; }
+    .goal .state { text-align: left; }
+  }
+
+  /* decision block */
+  .decision {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .decision h3 { font-size: 18px; }
+  .decision p { color: var(--ink-soft); max-width: 70ch; font-size: 15px; }
+  .decision .why { font-size: 14px; }
+  .decision .why b { color: var(--ink); }
+
+  /* two column layout for model */
+  .model { display: flex; flex-direction: column; gap: 30px; }
+  .model-item { display: flex; flex-direction: column; gap: 12px; }
+  .model-item .head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+  .model-item .head .path { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--accent); }
+  .model-item p { font-size: 14.5px; color: var(--ink-soft); max-width: 70ch; }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 15px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  thead th {
+    background: var(--sunk);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-soft); white-space: nowrap; border-bottom: 1px solid var(--rule);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+
+  /* pipeline stages */
+  .stages { display: flex; flex-direction: column; gap: 2px; }
+  .stage { background: var(--surface); padding: 16px 20px; display: grid; grid-template-columns: 30px 1fr; gap: 16px; align-items: start; }
+  .stage:first-child { border-radius: 3px 3px 0 0; }
+  .stage:last-child { border-radius: 0 0 3px 3px; }
+  .stage .n {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500;
+    color: var(--accent); background: var(--accent-wash);
+    width: 30px; height: 24px; display: grid; place-items: center; border-radius: 3px;
+  }
+  .stage h4 { margin-bottom: 3px; }
+  .stage p { font-size: 14px; color: var(--ink-soft); max-width: 74ch; }
+  .stage .fixes { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-faint); margin-top: 5px; }
+
+  /* milestones */
+  .milestones { display: flex; flex-direction: column; gap: 18px; }
+  .ms { background: var(--surface); border: 1px solid var(--rule-soft); border-radius: 4px; overflow: hidden; }
+  .ms > .bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: baseline; padding: 14px 20px; background: var(--sunk); border-bottom: 1px solid var(--rule-soft); }
+  .ms .code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; color: var(--accent); }
+  .ms h3 { flex: 1 1 20ch; }
+  .ms .meta { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); }
+  .ms .body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .ms ul { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 6px; }
+  .ms li { font-size: 14px; color: var(--ink-soft); }
+  .ms li b { color: var(--ink); font-weight: 600; }
+  .ms .gate { font-size: 14px; padding: 11px 14px; background: var(--ok-wash); border-radius: 3px; color: var(--ink-soft); }
+  .ms .gate b { color: var(--ok); font-weight: 600; }
+
+  ul.plain { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 9px; }
+  ul.plain li { color: var(--ink-soft); }
+  ul.plain li b { color: var(--ink); font-weight: 600; }
+
+  .open { background: var(--warn-wash); border-radius: 4px; padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; }
+  .open h3 { color: var(--warn); }
+  .open .q { display: flex; flex-direction: column; gap: 4px; }
+  .open .q .ask { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .open .q p { font-size: 14px; color: var(--ink-soft); }
+  .open .q .rec { font-size: 14px; color: var(--ink-soft); }
+  .open .q .rec b { color: var(--ink); font-weight: 600; }
+
+  footer { border-top: 1px solid var(--rule); padding-top: 22px; font-size: 13px; color: var(--ink-faint); display: flex; flex-direction: column; gap: 5px; }
+
+  @media (max-width: 620px) {
+    .page { padding: 36px 18px 64px; gap: 48px; }
+    pre { font-size: 11.5px; padding: 13px 14px; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="kicker">
+      <span><strong>SWLAB_practice_evaluation</strong></span>
+      <span>설계 계획서 초판</span>
+      <span>2026-09-11</span>
+      <span>기준 커밋 e6f13ff</span>
+    </div>
+    <h1>실습 채점 시스템 설계 계획서</h1>
+    <p class="lede">
+      지금 도구는 학생 코드를 받아와 돌려 보고 눈으로 확인하는 데까지 잘 작동합니다.
+      여기서 점수와 근거까지 나아가려면 한 가지가 먼저 필요합니다.
+      <b>시스템이 "문제"를 알아야 합니다.</b> 이 문서는 문제 명세를 중심에 두고 나머지 기능을
+      그 위에 올리는 순서를 정합니다.
+    </p>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">목표</span>
+      <h2>이 시스템이 해야 하는 네 가지</h2>
+      <p>기존 목표를 그대로 두고 달성 여부를 판정할 수 있게 다시 적었습니다. 오른쪽은 현재 상태입니다.</p>
+    </div>
+    <div class="goals">
+      <div class="goal">
+        <span class="tag">G1</span>
+        <div>
+          <h3>제출물 수집</h3>
+          <p>수강생 명단으로 학생 저장소를 일괄 받아오고, 각 학생의 제출 시각과 실패 사유를 남긴다.</p>
+        </div>
+        <span class="state part">대체로 됨</span>
+      </div>
+      <div class="goal">
+        <span class="tag">G2</span>
+        <div>
+          <h3>점수 자동 산출</h3>
+          <p>문제별 배점과 케이스별 배점에 따라 학생마다 점수를 계산하고, 분반 전체 성적표를 내보낸다.</p>
+        </div>
+        <span class="state none">미착수</span>
+      </div>
+      <div class="goal">
+        <span class="tag">G3</span>
+        <div>
+          <h3>판정 근거 기록</h3>
+          <p>어떤 문제를 어떤 환경에서 어떤 케이스로 채점해 그 점수가 나왔는지, 재채점으로 같은 결과가
+            나올 만큼 남긴다. 이의제기에 이 기록만으로 답할 수 있어야 한다.</p>
+        </div>
+        <span class="state none">미착수</span>
+      </div>
+      <div class="goal">
+        <span class="tag">G4</span>
+        <div>
+          <h3>문제를 시스템 안에 두기</h3>
+          <p>지금 실습 자료에만 있는 문제 정의를 시스템이 읽을 수 있는 형태로 옮겨, 제출 파일명과 배점과
+            채점 방식이 문제와 함께 관리되게 한다.</p>
+        </div>
+        <span class="state none">미착수</span>
+      </div>
+      <div class="goal">
+        <span class="tag">G5</span>
+        <div>
+          <h3>수동 채점</h3>
+          <p>자동 판정을 조교가 덮어쓰고 그 이유를 남긴다. 수동 점수도 자동 점수와 같은 성적표에 들어간다.</p>
+        </div>
+        <span class="state part">실행만 됨</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">핵심 설계 결정</span>
+      <h2>문제를 일급 개체로 만든다</h2>
+    </div>
+    <div class="decision">
+      <h3>지금은 "문제"가 학생이 만든 폴더 이름입니다</h3>
+      <p>
+        도구는 과제가 무엇인지 모릅니다. 학생 폴더를 훑어 그 이름으로 정답 경로를 거꾸로 조립하고,
+        폴더 안에서 <code>main.py</code> 또는 <code>main.c</code>를 찾습니다. 배점을 적을 자리도,
+        제출 파일명을 규정할 자리도, 지문을 둘 자리도 없습니다.
+      </p>
+      <p class="why">
+        <b>G2, G3, G4가 모두 이 한 가지 결핍에서 막혀 있습니다.</b> 배점을 적을 곳이 없으니 점수를
+        계산할 수 없고, 판정 대상을 식별할 수 없으니 근거를 기록할 대상이 정의되지 않고,
+        문제를 담을 그릇이 없으니 실습 자료를 시스템에 넣을 수 없습니다.
+        채점 정확성 문제도 같은 뿌리입니다. 제출 파일명을 규정할 수 없어 절반 이상의 제출물을 놓치고,
+        학생 폴더명이 다르면 매핑할 방법이 없습니다.
+      </p>
+      <p class="why">
+        따라서 <b>문제 명세를 파일로 정의하고, 채점은 그 명세를 따라 실행하는 구조</b>로 바꿉니다.
+        명세가 단일 원본이 되고, 테스트케이스와 배점과 실행 조건이 그 아래 모입니다.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">데이터 모델</span>
+      <h2>세 개의 파일 계약</h2>
+      <p>
+        명세, 매핑, 기록 세 가지만 정하면 나머지 기능은 이 위에서 조립됩니다.
+        형식은 사람이 편집기로 고칠 수 있게 YAML을 쓰고, 기계가 남기는 기록은 JSON을 씁니다.
+      </p>
+    </div>
+    <div class="model">
+
+      <div class="model-item">
+        <div class="head">
+          <h3>문제 명세</h3>
+          <span class="path">assignments/&lt;과목&gt;/&lt;연도&gt;/&lt;챕터&gt;/&lt;문제&gt;/problem.yaml</span>
+        </div>
+        <p>
+          한 문제에 대해 알아야 할 전부를 담습니다. 조교가 문제를 만들 때 이 파일부터 쓰고,
+          채점기는 이 파일만 보고 동작합니다.
+        </p>
+        <pre><span class="k">id</span>: system-2025-chap4-prob1
+<span class="k">title</span>: 명령행 인자로 받은 파일 복사하기
+<span class="k">statement</span>: |
+  <span class="c">실습 4-1. argv[1]의 파일을 argv[2]로 복사한다.</span>
+  <span class="c">open, read, write 시스템 콜만 사용한다.</span>
+<span class="k">source</span>: slides/system-2025-chap4.pptx#p12   <span class="c"># 지문 원본 위치</span>
+
+<span class="k">submit</span>:
+  <span class="k">language</span>: c
+  <span class="k">files</span>: [main.c, copy.c, prob1.c]     <span class="c"># 허용 파일명, 앞이 우선</span>
+  <span class="k">entry</span>: main.c                        <span class="c"># 링크 대상. 생략하면 폴더 전체</span>
+
+<span class="k">build</span>:
+  <span class="k">flags</span>: [-Wall, -lm]                   <span class="c"># 지금은 줄 방법이 없는 값</span>
+
+<span class="k">run</span>:
+  <span class="k">timeout_sec</span>: 10
+  <span class="k">compare</span>: trimmed                      <span class="c"># exact | trimmed | tokens | numeric</span>
+  <span class="k">tolerance</span>: 1e-6                       <span class="c"># numeric 일 때만</span>
+
+<span class="k">scoring</span>:
+  <span class="k">total</span>: 10
+  <span class="k">cases</span>:
+    <span class="k">01-basic</span>: 5
+    <span class="k">02-empty-file</span>: 3
+    <span class="k">03-missing-arg</span>: 2
+  <span class="k">manual_override</span>: allowed
+
+<span class="k">due</span>: 2026-10-15T23:59:00+09:00           <span class="c"># 없으면 기한 판정 생략</span></pre>
+        <p>
+          케이스는 명세 옆에 둡니다. 지금의 세 파일 규약을 그대로 쓰되 이름만 분명히 합니다.
+        </p>
+        <pre>assignments/system/2025/chap4/prob1/
+  problem.yaml
+  cases/
+    01-basic/
+      args.txt          <span class="c"># 명령행 인자. 줄 단위로 하나씩</span>
+      stdin.txt         <span class="c"># 표준 입력. 없으면 생략</span>
+      expected.txt      <span class="c"># 기대 출력</span>
+      files/            <span class="c"># 실행 전 작업 사본에 넣을 입력 파일</span>
+        source.txt
+    02-empty-file/
+    03-missing-arg/</pre>
+      </div>
+
+      <div class="model-item">
+        <div class="head">
+          <h3>제출물 매핑</h3>
+          <span class="path">assignments/&lt;과목&gt;/&lt;연도&gt;/layout.yaml</span>
+        </div>
+        <p>
+          학생이 폴더를 어디에 어떤 이름으로 만들었는지는 통제할 수 없습니다.
+          표준 후보를 여러 개 두고, 그래도 못 찾으면 화면에서 학생별로 한 번 지정하고 그 결과를
+          이 파일에 저장합니다. 한 번 지정하면 다음 채점부터 자동으로 맞습니다.
+        </p>
+        <pre><span class="k">candidates</span>:                  <span class="c"># 모든 학생에게 순서대로 시도</span>
+  <span class="k">chap4/prob1</span>:
+    - chap4/prob1
+    - chap4/hw1
+    - chap04/prob1
+    - chapter4/prob1
+
+<span class="k">overrides</span>:                   <span class="c"># 화면에서 지정하면 여기에 쌓임</span>
+  <span class="k">20xxxxx</span>:
+    <span class="k">chap4/prob1</span>: 과제4/1번</pre>
+      </div>
+
+      <div class="model-item">
+        <div class="head">
+          <h3>채점 기록</h3>
+          <span class="path">records/&lt;연도&gt;/&lt;분반&gt;/&lt;문제&gt;/&lt;실행ID&gt;/</span>
+        </div>
+        <p>
+          G3의 핵심입니다. 채점 한 번을 하나의 실행으로 보고, 그 실행의 조건과 학생별 결과를 함께
+          남깁니다. 조건을 같이 남기는 이유는 재채점 결과가 달라졌을 때 무엇이 달라졌는지
+          가려내기 위해서입니다.
+        </p>
+        <pre>{
+  <span class="k">"student_id"</span>: <span class="s">"20xxxxx"</span>,
+  <span class="k">"problem_id"</span>: <span class="s">"system-2025-chap4-prob1"</span>,
+  <span class="k">"graded_at"</span>: <span class="s">"2026-10-16T14:30:22+09:00"</span>,
+
+  <span class="c">// 재현에 필요한 조건</span>
+  <span class="k">"tool_commit"</span>: <span class="s">"e6f13ff"</span>,
+  <span class="k">"manifest_sha"</span>: <span class="s">"sha256:9c1f…"</span>,
+  <span class="k">"env"</span>: { <span class="k">"mode"</span>: <span class="s">"docker"</span>, <span class="k">"image"</span>: <span class="s">"grader-image:latest"</span>,
+            <span class="k">"compiler"</span>: <span class="s">"gcc 11.4.0"</span> },
+
+  <span class="c">// 무엇을 채점했는가</span>
+  <span class="k">"submission"</span>: {
+    <span class="k">"resolved_path"</span>: <span class="s">"chap4/prob1"</span>,
+    <span class="k">"matched_file"</span>: <span class="s">"main.c"</span>,
+    <span class="k">"commit"</span>: <span class="s">"a3f9c21"</span>,
+    <span class="k">"committed_at"</span>: <span class="s">"2026-10-14T21:03:11+09:00"</span>,
+    <span class="k">"late_hours"</span>: 0
+  },
+
+  <span class="c">// 케이스별 근거</span>
+  <span class="k">"cases"</span>: [
+    { <span class="k">"name"</span>: <span class="s">"01-basic"</span>, <span class="k">"passed"</span>: true,
+      <span class="k">"points"</span>: 5, <span class="k">"max"</span>: 5,
+      <span class="k">"exit_code"</span>: 0, <span class="k">"duration_ms"</span>: 118,
+      <span class="k">"stdout"</span>: <span class="s">"…"</span>, <span class="k">"expected"</span>: <span class="s">"…"</span>, <span class="k">"diff"</span>: null },
+    { <span class="k">"name"</span>: <span class="s">"03-missing-arg"</span>, <span class="k">"passed"</span>: false,
+      <span class="k">"points"</span>: 0, <span class="k">"max"</span>: 2,
+      <span class="k">"exit_code"</span>: 139, <span class="k">"failure"</span>: <span class="s">"segfault"</span>,
+      <span class="k">"stdout"</span>: <span class="s">""</span>, <span class="k">"expected"</span>: <span class="s">"usage: copy src dst"</span> }
+  ],
+
+  <span class="c">// 점수와 그 이유</span>
+  <span class="k">"auto_score"</span>: 8,
+  <span class="k">"final_score"</span>: 9,
+  <span class="k">"override"</span>: {
+    <span class="k">"by"</span>: <span class="s">"조교"</span>,
+    <span class="k">"reason"</span>: <span class="s">"인자 검사 누락이나 복사 로직은 정상. 부분 인정"</span>,
+    <span class="k">"at"</span>: <span class="s">"2026-10-16T15:02:40+09:00"</span>
+  }
+}</pre>
+        <p>
+          실행 폴더에는 학생별 파일과 함께 분반 성적표 <code>summary.csv</code>를 둡니다.
+          학번, 자동 점수, 최종 점수, 통과 케이스 수, 채점 시각, 실행 환경 순서면 그대로 성적 입력에 쓸 수 있습니다.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">채점 흐름</span>
+      <h2>일곱 단계로 재구성</h2>
+      <p>
+        지금 흐름과 크게 다른 지점은 두 곳입니다. 문제 명세가 시작점이 되고,
+        실행이 학생 저장소가 아니라 작업 사본에서 일어납니다.
+      </p>
+    </div>
+    <div class="stages">
+      <div class="stage">
+        <span class="n">1</span>
+        <div>
+          <h4>명세 적재</h4>
+          <p>문제 명세를 읽고 검증합니다. 배점 합이 총점과 맞는지, 케이스 폴더가 실제로 있는지,
+            기대 출력 파일이 있는지 확인하고 어긋나면 채점을 시작하지 않습니다.</p>
+          <div class="fixes">해결: 빈 케이스 폴더로 조용히 통과하는 문제, 배점 부재</div>
+        </div>
+      </div>
+      <div class="stage">
+        <span class="n">2</span>
+        <div>
+          <h4>제출물 확정</h4>
+          <p>학생별로 후보 경로를 순서대로 시도해 제출 폴더를 찾고, 명세의 허용 파일명 중 실제로 있는
+            것을 고릅니다. 못 찾은 학생은 실패가 아니라 미확정으로 분류해 화면에서 지정하게 합니다.</p>
+          <div class="fixes">해결: main 이름만 찾는 문제, 첫 학생 폴더명 강제, 경로 잔존</div>
+        </div>
+      </div>
+      <div class="stage">
+        <span class="n">3</span>
+        <div>
+          <h4>작업 사본 생성</h4>
+          <p>확정된 제출 파일과 케이스 입력 파일을 임시 작업 폴더로 복사합니다.
+            학생 저장소는 이후 단계에서 읽지도 쓰지도 않습니다.</p>
+          <div class="fixes">해결: 제출물 훼손, 산출물 잔존, 심볼릭 링크 추종, 재채점 결과 불일치</div>
+        </div>
+      </div>
+      <div class="stage">
+        <span class="n">4</span>
+        <div>
+          <h4>빌드</h4>
+          <p>명세의 대상 파일과 컴파일 옵션으로 빌드합니다. 제한 시간을 걸고, 실패하면 컴파일러 메시지를
+            그대로 기록에 남깁니다. 실행 환경 판정은 한 곳에서만 합니다.</p>
+          <div class="fixes">해결: 옵션 지정 불가, 폴더 전체 링크, 컴파일 무제한 대기, 모드 판정 중복</div>
+        </div>
+      </div>
+      <div class="stage">
+        <span class="n">5</span>
+        <div>
+          <h4>케이스 실행</h4>
+          <p>케이스마다 인자와 표준 입력을 주고 제한 시간 안에 실행합니다.
+            시간 초과 시 컨테이너 안의 프로세스까지 확실히 정리하고, 출력 기록량에 상한을 둡니다.</p>
+          <div class="fixes">해결: 좀비 프로세스, 디스크 고갈, 원인 불명 오류 보고</div>
+        </div>
+      </div>
+      <div class="stage">
+        <span class="n">6</span>
+        <div>
+          <h4>비교와 점수 산출</h4>
+          <p>명세가 지정한 비교 방식으로 판정하고 케이스 배점을 더해 자동 점수를 냅니다.
+            실패한 케이스는 차이나는 첫 줄을 함께 남깁니다.</p>
+          <div class="fixes">해결: 단일 비교 규칙, 점수 개념 부재, 출력만 보여주는 리포트</div>
+        </div>
+      </div>
+      <div class="stage">
+        <span class="n">7</span>
+        <div>
+          <h4>기록과 성적표</h4>
+          <p>학생별 기록 파일과 분반 성적표를 씁니다. 이 단계가 끝나야 채점이 완료된 것으로 봅니다.
+            화면 표시는 기록 파일을 읽어 보여주는 것으로 바꿉니다.</p>
+          <div class="fixes">해결: 결과 영속화 부재, 예외 한 번에 기록 소실, 성적표 수단 없음</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">모듈 구조</span>
+      <h2>역할 하나에 파일 하나</h2>
+      <p>
+        지금 <code>evaluator.py</code> 하나가 명단 파싱, 저장소 동기화, 폴더 탐색, 파일 조작,
+        채점 지휘, 로그 서식까지 여섯 가지를 맡고 있습니다. 새 기능을 여기에 더 넣으면 손댈 수 없게 됩니다.
+        화면에 의존하지 않는 부분을 먼저 떼어내면 테스트를 붙일 수 있습니다.
+      </p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>제안 모듈</th><th>역할</th><th>현재 위치</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">core/roster.py</td><td>명단 읽기와 검증. 형식 오류를 예외 대신 결과로 반환</td><td class="mono">evaluator.py 일부</td></tr>
+          <tr><td class="mono">core/sync.py</td><td>저장소 수집. 실패 분류, 빈 폴더 정리, 커밋 시각 수집</td><td class="mono">gitmanager.py</td></tr>
+          <tr><td class="mono">core/manifest.py</td><td>문제 명세 적재와 검증</td><td>신규</td></tr>
+          <tr><td class="mono">core/resolver.py</td><td>학생 제출물 경로와 파일 확정</td><td>신규</td></tr>
+          <tr><td class="mono">core/workspace.py</td><td>작업 사본 생성과 정리</td><td>신규</td></tr>
+          <tr><td class="mono">core/runner.py</td><td>환경별 빌드와 실행. 모드 판정의 유일한 장소</td><td class="mono">grader.py 전반부</td></tr>
+          <tr><td class="mono">core/compare.py</td><td>비교 전략 네 가지</td><td class="mono">grader.py:215</td></tr>
+          <tr><td class="mono">core/scorer.py</td><td>케이스 배점 합산과 수동 조정 반영</td><td>신규</td></tr>
+          <tr><td class="mono">core/record.py</td><td>기록 파일과 성적표 읽기 쓰기</td><td>신규</td></tr>
+          <tr><td class="mono">ui/</td><td>화면. 도메인 계층은 서식 없는 자료만 반환</td><td class="mono">gui.py</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        기존 <code>grader.py</code>는 이미 화면에 의존하지 않아 그대로 옮기기 쉽습니다. 이번 감사에서
+        화면 없이 불러 동작을 확인할 수 있었던 것도 그 덕입니다. 데이터베이스 계층 세 파일은 2023년 이후
+        연결된 적이 없고 기록을 파일로 남기기로 했으니, 지우거나 별도 폴더로 보관합니다.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">실행 계획</span>
+      <h2>여섯 단계, 각 단계의 완료 기준</h2>
+      <p>
+        순서에 이유가 있습니다. 채점 대상을 정확히 고르는 문제를 닫기 전에 점수 계산을 올리면
+        틀린 점수가 자동으로 기록됩니다. 안전 조치를 먼저 하고, 정확성을 세운 다음 점수와 기록을 올립니다.
+      </p>
+    </div>
+    <div class="milestones">
+
+      <div class="ms">
+        <div class="bar">
+          <span class="code">M0</span>
+          <h3>안전 조치</h3>
+          <span class="meta">설계 변경 없음</span>
+        </div>
+        <div class="body">
+          <ul>
+            <li><b>개인정보 분리.</b> 명단과 데이터베이스 파일을 추적에서 빼고 무시 규칙을 추가합니다. 원격 이력 정리는 별도로 판단합니다.</li>
+            <li><b>파일 로그 활성화.</b> 주석 처리된 파일 기록을 켜서 최소한 콘솔을 닫아도 흔적이 남게 합니다.</li>
+            <li><b>즉시 고칠 결함.</b> 파일 추가 기능의 미import, 수동 실행의 환경 판정 누락, 설정값 없는 호출 경로.</li>
+          </ul>
+          <div class="gate"><b>완료 기준</b> 새 커밋에 개인정보가 들어가지 않고, 세 결함이 재현되지 않는다.</div>
+        </div>
+      </div>
+
+      <div class="ms">
+        <div class="bar">
+          <span class="code">M1</span>
+          <h3>문제 명세 도입</h3>
+          <span class="meta">G4의 토대</span>
+        </div>
+        <div class="body">
+          <ul>
+            <li><b>명세 형식 확정과 적재기.</b> <code>manifest.py</code>와 검증 규칙.</li>
+            <li><b>기존 케이스 이관.</b> 현재 <code>testcase</code> 아래 다섯 문제를 새 구조로 옮기고 배점을 채웁니다.</li>
+            <li><b>제출물 확정기.</b> 후보 경로와 허용 파일명으로 매핑하고, 미확정 학생을 화면에서 지정해 저장합니다.</li>
+            <li><b>실제 한 문제로 검증.</b> 2025년 3분반의 한 챕터를 명세로 정의해 30명 전원이 확정되는지 봅니다.</li>
+          </ul>
+          <div class="gate"><b>완료 기준</b> 한 문제에 대해 분반 전원의 제출 파일이 확정되고, 미확정은 이유와 함께 목록으로 나온다.</div>
+        </div>
+      </div>
+
+      <div class="ms">
+        <div class="bar">
+          <span class="code">M2</span>
+          <h3>작업 사본과 실행 정리</h3>
+          <span class="meta">정확성</span>
+        </div>
+        <div class="body">
+          <ul>
+            <li><b>작업 사본 도입.</b> 채점이 학생 저장소를 건드리지 않게 합니다.</li>
+            <li><b>빌드 분리.</b> 명세의 대상 파일과 옵션을 쓰고 컴파일에 제한 시간을 겁니다.</li>
+            <li><b>실행 환경 일원화.</b> 세 곳에 흩어진 모드 판정을 하나로 모으고 컨테이너 가동 여부를 먼저 확인합니다.</li>
+            <li><b>정리 보장.</b> 시간 초과 시 컨테이너 내부 프로세스까지 종료하고 출력 기록량에 상한을 둡니다.</li>
+          </ul>
+          <div class="gate"><b>완료 기준</b> 같은 문제를 두 번 채점해도 결과가 같고, 학생 저장소 상태가 채점 전과 동일하다.</div>
+        </div>
+      </div>
+
+      <div class="ms">
+        <div class="bar">
+          <span class="code">M3</span>
+          <h3>점수 산출과 기록</h3>
+          <span class="meta">G2, G3</span>
+        </div>
+        <div class="body">
+          <ul>
+            <li><b>비교 전략 네 가지.</b> 완전일치, 공백 정리, 토큰 단위, 수치 허용오차.</li>
+            <li><b>점수 산출기.</b> 케이스 배점 합산과 총점 검증.</li>
+            <li><b>기록 저장.</b> 학생별 기록 파일과 분반 성적표. 이미 발신 중인 결과 신호를 받는 쪽을 만듭니다.</li>
+            <li><b>예외 경계.</b> 채점 루프와 명단 읽기에 경계를 두어 한 학생의 실패가 배치를 멈추지 않게 합니다.</li>
+          </ul>
+          <div class="gate"><b>완료 기준</b> 분반 한 문제를 채점하면 성적표 파일이 나오고, 기록만 보고 각 점수의 이유를 설명할 수 있다.</div>
+        </div>
+      </div>
+
+      <div class="ms">
+        <div class="bar">
+          <span class="code">M4</span>
+          <h3>수동 채점 통합</h3>
+          <span class="meta">G5</span>
+        </div>
+        <div class="body">
+          <ul>
+            <li><b>판정 덮어쓰기.</b> 자동 점수 옆에 최종 점수와 이유를 입력해 같은 기록에 남깁니다.</li>
+            <li><b>수동 실행을 기록과 연결.</b> 지금은 눈으로 보고 끝나는 실행 결과를 기록에 첨부합니다.</li>
+            <li><b>채점 화면 개편.</b> 서식 있는 로그 대신 기록을 읽어 표로 보여주고, 학생 출력은 이스케이프합니다.</li>
+          </ul>
+          <div class="gate"><b>완료 기준</b> 수동 조정한 점수가 성적표에 반영되고 조정 이유가 기록에 남는다.</div>
+        </div>
+      </div>
+
+      <div class="ms">
+        <div class="bar">
+          <span class="code">M5</span>
+          <h3>운영 기능과 테스트</h3>
+          <span class="meta">지속 가능성</span>
+        </div>
+        <div class="body">
+          <ul>
+            <li><b>골든 테스트.</b> 가짜 저장소와 가짜 명세로 파이프라인 전체를 검증합니다. 네 환경이 같은 결과를 내는지도 확인합니다.</li>
+            <li><b>제출 기한 판정.</b> 수집 때 커밋 시각을 읽어 지연 여부를 기록합니다. 지금은 저장소를 받아오면서 이 정보를 버리고 있습니다.</li>
+            <li><b>채점 비동기화와 진행 표시.</b> 화면이 멈추지 않게 하고 진행률을 채점에도 연결합니다.</li>
+            <li><b>문서.</b> 실행 요건과 작업 디렉터리, 컨테이너 준비, 명세 작성법을 적습니다.</li>
+          </ul>
+          <div class="gate"><b>완료 기준</b> 테스트가 통과한 상태로 한 학기 분량을 채점할 수 있고, 새 조교가 문서만 보고 채점을 돌릴 수 있다.</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">범위 밖</span>
+      <h2>이번에 하지 않을 것</h2>
+    </div>
+    <ul class="plain">
+      <li><b>실습 자료 자동 파싱.</b> 슬라이드에서 문제를 추출하지 않습니다. 명세에 지문을 적고 원본 위치를 링크로 남기는 편이 유지됩니다. 반대로 명세에서 자료를 생성하는 방향은 나중에 검토할 수 있습니다.</li>
+      <li><b>표절과 유사도 검사.</b> 별도 도구의 영역입니다. 다만 기록에 커밋 해시를 남겨 두면 나중에 붙이기 쉬워집니다.</li>
+      <li><b>웹 서비스화와 다중 사용자.</b> 당장은 조교 한 명이 자기 PC에서 돌리는 도구로 유지합니다. 기록을 파일로 남기기로 한 이유이기도 합니다.</li>
+      <li><b>학생용 화면.</b> 학생이 스스로 채점을 돌려보는 기능은 격리 요건이 완전히 달라집니다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">확인이 필요한 사항</span>
+      <h2>진행하면서 정할 것들</h2>
+    </div>
+    <div class="open">
+      <h3>기본값을 정해 두었으니 다르면 알려주시기 바랍니다</h3>
+      <div class="q">
+        <span class="ask">배점을 케이스 단위로 줄지, 문제 단위로만 줄지</span>
+        <p class="rec">케이스별 배점을 기본으로 두었습니다. <b>부분점수를 주려면 케이스 단위가 필요하고</b>, 문제 단위만 원하면 케이스 배점을 생략하고 전부 통과일 때만 만점으로 처리하면 됩니다.</p>
+      </div>
+      <div class="q">
+        <span class="ask">기존 테스트케이스와 폴더 구조를 바꿔도 되는지</span>
+        <p class="rec">새 구조로 옮기는 것을 전제로 썼습니다. 기존 다섯 문제뿐이라 이관 부담은 작습니다. <b>옛 구조를 함께 읽는 호환 코드는 두지 않는 편</b>을 권합니다. 지금 규약이 세 갈래로 갈린 원인이 그 호환 코드였습니다.</p>
+      </div>
+      <div class="q">
+        <span class="ask">실행 환경을 문제 명세가 정할지, 조교가 그때그때 고를지</span>
+        <p class="rec">명세에 두지 않고 실행 시 선택으로 남겼습니다. 다만 <b>기록에 어떤 환경이었는지 반드시 남깁니다.</b> 같은 코드가 환경에 따라 다르게 채점되는 문제는 컴파일 옵션을 명세로 옮기면 대부분 사라집니다.</p>
+      </div>
+      <div class="q">
+        <span class="ask">개인정보 이력 정리를 어디까지 할지</span>
+        <p class="rec">M0에서는 추적 중단까지만 넣었습니다. 이미 원격에 올라간 이력을 다시 쓰는 일은 <b>공유 저장소라 되돌리기 어려우니 별도로 결정</b>하시는 편이 좋습니다.</p>
+      </div>
+      <div class="q">
+        <span class="ask">기록 형식을 파일로 둘지 데이터베이스로 갈지</span>
+        <p class="rec">파일을 택했습니다. 조교가 직접 열어볼 수 있고 git으로 이력이 남고 성적 입력에 바로 쓸 수 있습니다. <b>2023년에 만든 데이터베이스 계층은 정리 대상</b>으로 보았습니다. 나중에 학기 간 통계가 필요해지면 기록 파일을 읽어 적재하는 쪽이 낫습니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>이 계획서는 커밋 e6f13ff 시점의 코드와 저장소 데이터를 근거로 작성했습니다.</span>
+    <span>현재 상태 진단과 결함 73건의 상세는 함께 작성한 감사 보고서에 있습니다.</span>
+    <span>단계별 완료 기준은 그대로 작업 단위로 쓸 수 있게 적었습니다. M0부터 착수하면 됩니다.</span>
+  </footer>
+
+</div>
