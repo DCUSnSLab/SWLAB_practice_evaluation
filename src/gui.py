@@ -557,10 +557,21 @@ class Gui(QMainWindow):
         for index, summary in enumerate(summaries):
             passed, total = summary['passed_cases'], summary['total_cases']
             status = labels.get(summary['status'], '모두 통과' if passed == total else '오답 있음')
-            values = [summary['student'], status, '—' if passed is None else f'{passed} / {total}',
+            symbol = '—'
+            if summary['status'] == 'graded' and total > 0:
+                symbol = 'O' if passed == total else ('△' if passed else 'X')
+            values = [summary['student'], status, symbol, '—' if passed is None else f'{passed} / {total}',
                       '—' if passed is None else str(total - passed)]
             for column, value in enumerate(values):
-                self.resultTable.setItem(index, column, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                if column == 2:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    font = item.font(); font.setBold(True); item.setFont(font)
+                    item.setToolTip({'O': '통과: 모든 케이스를 통과했습니다.',
+                                     '△': '부족: 일부 케이스만 통과했습니다.',
+                                     'X': '오답: 통과한 케이스가 없습니다.',
+                                     '—': '아직 판정할 수 없습니다. 판정 열과 상세 근거를 확인하세요.'}[symbol])
+                self.resultTable.setItem(index, column, item)
         self.resultTable.blockSignals(False)
         if selected >= 0 and selected < len(summaries):
             self.resultTable.selectRow(selected)

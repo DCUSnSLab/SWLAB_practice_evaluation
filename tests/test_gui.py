@@ -63,6 +63,38 @@ class GuiTests(unittest.TestCase):
         self.assertTrue(window.btnGrade.isEnabled())
         window.close()
 
+    def test_result_symbols_distinguish_partial_answers_and_ungraded_students(self):
+        from types import SimpleNamespace
+        with patch.object(Gui, 'refreshYearList'):
+            window = Gui()
+        try:
+            students = ['all', 'partial', 'wrong', 'compile', 'missing', 'manual', 'waiting']
+            window.case_report = SimpleNamespace(context={'students': students, 'case_count': 2}, state='running')
+            window.results = []
+            for student, outcomes in [('all', [True, True]), ('partial', [True, False]), ('wrong', [False, False])]:
+                for index, passed in enumerate(outcomes):
+                    window.results.append({'student': student, 'case': str(index),
+                        'status': 'passed' if passed else 'wrong_answer', 'passed': passed})
+            window.results.extend([
+                {'student': 'compile', 'case': 'build', 'status': 'compile_error', 'passed': False},
+                {'student': 'missing', 'case': 'setup', 'status': 'missing', 'passed': False},
+                {'student': 'manual', 'case': 'review', 'status': 'manual_passed', 'passed': True}])
+            window.refreshResultsTable()
+            self.assertEqual(window.resultTable.horizontalHeaderItem(1).text(), '판정')
+            self.assertEqual(window.resultTable.horizontalHeaderItem(2).text(), '기호')
+            self.assertEqual([window.resultTable.item(i, 2).text() for i in range(7)],
+                             ['O', '△', 'X', 'X', '—', '—', '—'])
+            self.assertEqual(window.resultTable.item(1, 3).text(), '1 / 2')
+            self.assertEqual(window.resultTable.item(1, 4).text(), '1')
+            self.assertIn('일부', window.resultTable.item(1, 2).toolTip())
+            window.case_report.state = 'cancelled'
+            window.refreshResultsTable()
+            self.assertEqual(window.resultTable.item(6, 1).text(), '미실행')
+            self.assertEqual(window.resultTable.item(6, 2).text(), '—')
+        finally:
+            window.close()
+            self.app.processEvents()
+
     def test_class_defaults_to_all_students_and_selection_keeps_problem(self):
         import tempfile
         with tempfile.TemporaryDirectory() as temp, patch.object(Gui, 'refreshYearList'), patch('paths.TESTCASES', Path(temp)):
