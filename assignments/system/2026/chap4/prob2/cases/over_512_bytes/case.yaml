@@ -1,0 +1,205 @@
+args:
+- source.txt
+- destination.txt
+files:
+  destination.txt: '0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    0123456789abcdef
+
+    '

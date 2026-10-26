@@ -1,0 +1,26 @@
+version: 1
+id: system-2026-chap4-prob2
+title: 파일 복사 (기존 케이스 이관 예시)
+statement: |
+  argv[1]의 파일 내용을 argv[2]에 복사한다. 기존 대상 파일은 덮어쓴다.
+  빈 파일, 공백이 포함된 경로, 512바이트를 초과하는 파일을 처리한다.
+  아래 10점 배점은 예시이며 실제 성적 처리 전 교수자 배점을 확인한다.
+  특정 시스템 호출 사용 여부는 출력 채점과 별도로 검토한다.
+source: testcase/system/chap4/prob2
+submit:
+  language: c
+  files: [main.c, copy.c, prob2.c]
+  paths: [chap4/prob2, '.']
+build:
+  flags: [-Wall, -Wextra]
+run:
+  timeout_sec: 10
+  compare: exact
+scoring:
+  total: 10
+  cases:
+    small: 4
+    empty: 2
+    spaces: 2
+    over_512_bytes: 2
+  manual_override: allowed

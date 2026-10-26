@@ -1,0 +1,20 @@
+version: 1
+id: demo-sum
+title: 두 정수의 합 (채점 흐름 검증용)
+statement: |
+  표준입력에서 공백으로 구분된 두 정수를 읽어 합을 출력한다.
+  양수, 음수, 0을 처리해야 한다. 이 문제와 배점은 운영용 예시이다.
+submit:
+  language: python
+  files: [main.py, answer.py]
+  paths: [chap1/sum, '.']
+run:
+  timeout_sec: 5
+  compare: tokens
+scoring:
+  total: 10
+  cases:
+    positive: 4
+    negative: 4
+    zero: 2
+  manual_override: allowed

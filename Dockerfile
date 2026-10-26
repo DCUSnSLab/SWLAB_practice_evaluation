@@ -6,6 +6,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
+    make \
+    procps \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
