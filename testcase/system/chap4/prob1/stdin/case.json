@@ -1,0 +1,5 @@
+{
+  "expected": "first line\nsecond line\n",
+  "comparison": "exact",
+  "source_slide": 7
+}

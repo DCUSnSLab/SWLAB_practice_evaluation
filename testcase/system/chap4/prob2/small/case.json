@@ -1,0 +1,10 @@
+{
+  "args": [
+    "source.txt",
+    "destination.txt"
+  ],
+  "files": {
+    "destination.txt": "Alpha\nBeta\n"
+  },
+  "source_slide": 9
+}
