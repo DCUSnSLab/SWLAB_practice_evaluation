@@ -1,6 +1,10 @@
 import sys
 import os
 import shutil
+import tempfile
+import json
+from pathlib import Path
+from paths import case_path, safe_path, parse_args
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QLineEdit, QPushButton, QTextEdit, 
                              QComboBox, QFileDialog, QMessageBox, QGroupBox, QRadioButton)
@@ -10,6 +14,7 @@ class TestMaker(QWidget):
     def __init__(self):
         super().__init__()
         self.grader = Grader()
+        self.job = None
         self.init_ui()
 
     def init_ui(self):
@@ -29,12 +34,13 @@ class TestMaker(QWidget):
         layout.addLayout(sol_layout)
         
         # 2. Target Path Configuration
-        layout.addWidget(QLabel("2. Target Location (testdata/...)"))
+        layout.addWidget(QLabel("2. Target Location (testcase/lecture/chapter/problem/case)"))
         
         # Class Selection (Scan origin directory)
         target_layout = QHBoxLayout()
         target_layout.addWidget(QLabel("Class:"))
         self.comboClass = QComboBox()
+        self.comboClass.setEditable(True)
         self.scan_classes()
         target_layout.addWidget(self.comboClass)
         layout.addLayout(target_layout)
@@ -89,7 +95,7 @@ class TestMaker(QWidget):
         # 5. Controls
         btn_layout = QHBoxLayout()
         self.btnGenerate = QPushButton("Generate & Save Case")
-        self.btnGenerate.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
+        self.btnGenerate.setStyleSheet("background-color: #216e39; color: white; font-weight: bold; padding: 10px;")
         self.btnGenerate.clicked.connect(self.generate_case)
         btn_layout.addWidget(self.btnGenerate)
         layout.addLayout(btn_layout)
@@ -113,7 +119,7 @@ class TestMaker(QWidget):
                 dirs = [d for d in os.listdir(origin_dir) if os.path.isdir(os.path.join(origin_dir, d))]
                 self.comboClass.addItems(sorted(dirs))
             else:
-                self.comboClass.addItem("(origin folder not found)")
+                self.comboClass.addItems(["system", "python"])
         except:
              self.comboClass.addItem("Error scanning")
 
@@ -137,7 +143,11 @@ class TestMaker(QWidget):
         
         inputs = self.txtInput.toPlainText()
         args_str = self.txtArgs.text().strip()
-        args = args_str.split() if args_str else []
+        try:
+            args = parse_args(args_str)
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Arguments', str(exc))
+            return
         
         if not sol_file or not os.path.exists(sol_file):
             QMessageBox.warning(self, "Error", "Solution file not found.")
@@ -146,53 +156,44 @@ class TestMaker(QWidget):
             QMessageBox.warning(self, "Error", "Please fill all target path fields.")
             return
             
-        self.txtLog.clear()
-        self.txtLog.append(f"Running {os.path.basename(sol_file)}...")
-        
-        # 1. Run Code
-        sol_dir = os.path.dirname(sol_file)
-        sol_name = os.path.basename(sol_file)
-        config = {'mode': self.get_mode()}
-        
-        success, stdout, stderr = self.grader.run_code(sol_dir, inputs, args, config, target_file=sol_name)
-        
-        if not success:
-            self.txtLog.append("Execution Failed!")
-            self.txtLog.append(f"Stderr: {stderr}")
-            QMessageBox.critical(self, "Failed", "Solution execution failed. Check log.")
-            return
-            
-        self.txtLog.append("Execution Successful.")
-        self.txtLog.append(f"Output Preview:\n{stdout}")
-        
-        # 2. Save Artifacts
-        # Path: root/testdata/<class>/testcases/<chap>/<prob>/<case>/
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(current_dir)
-        target_dir = os.path.join(project_root, 'testdata', class_name, 'testcases', chapter, problem, case_name)
-        
         try:
-            os.makedirs(target_dir, exist_ok=True)
-            
-            # Save output.txt (Required)
-            with open(os.path.join(target_dir, 'output.txt'), 'w', encoding='utf-8') as f:
-                f.write(stdout)
-                
-            # Save input.txt (if present)
-            if inputs:
-                with open(os.path.join(target_dir, 'input.txt'), 'w', encoding='utf-8') as f:
-                    f.write(inputs)
-            
-            # Save args.txt (if present)
-            if args_str:
-                with open(os.path.join(target_dir, 'args.txt'), 'w', encoding='utf-8') as f:
-                    f.write(args_str)
-                    
-            self.txtLog.append(f"\nSaved Test Case to:\n{target_dir}")
-            QMessageBox.information(self, "Success", f"Test Case '{case_name}' Created!")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save files: {e}")
+            for component in (class_name, chapter, problem, case_name):
+                if not component or Path(component).name != component or component in ('.', '..') or '\\' in component:
+                    raise ValueError('Use single folder names for the target location.')
+            destination = safe_path(case_path(class_name, chapter, problem), case_name)
+            if destination.exists():
+                raise ValueError('Case already exists. Choose a new case name.')
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Target', str(exc))
+            return
+        self.txtLog.clear()
+        self.btnGenerate.setEnabled(False)
+        mode = self.get_mode()
+        def generate(progress):
+            grader = Grader()
+            with tempfile.TemporaryDirectory(prefix='swlab-solution-') as temp:
+                work = Path(temp) / 'work'
+                shutil.copytree(Path(sol_file).parent, work, ignore=shutil.ignore_patterns('.git', '__pycache__'))
+                success, stdout, stderr = grader.run_code(work, inputs, args, {'mode': mode}, target_file=Path(sol_file).name)
+            if not success:
+                raise ValueError(stderr or 'Solution execution failed.')
+            destination.mkdir(parents=True, exist_ok=False)
+            (destination / 'output.txt').write_text(stdout, encoding='utf-8')
+            (destination / 'input.txt').write_text(inputs, encoding='utf-8')
+            (destination / 'case.json').write_text(json.dumps({'args': args, 'target_file': Path(sol_file).name}, indent=2), encoding='utf-8')
+            return str(destination), stdout
+        from gui import Job
+        self.job = Job(generate, self)
+        self.job.result.connect(lambda result: self.txtLog.setPlainText(f'Saved: {result[0]}\n\n{result[1]}'))
+        self.job.failed.connect(lambda error: self.txtLog.setPlainText('Error: ' + error))
+        self.job.finished.connect(lambda: self.btnGenerate.setEnabled(True))
+        self.job.start()
+
+    def closeEvent(self, event):
+        if self.job and self.job.isRunning():
+            event.ignore()
+        else:
+            event.accept()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
