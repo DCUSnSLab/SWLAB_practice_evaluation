@@ -3,6 +3,9 @@ from student import Student
 import csv
 import re
 import os
+import shutil
+from datetime import date
+from paths import safe_path, natural_key
 from PyQt6.QtCore import QObject, pyqtSignal as Signal
 from grader import Grader
 
@@ -20,47 +23,32 @@ class Evaluator(QObject):
         self.grader.log_message.connect(self.log_message.emit)
 
     def loadfile(self,file):
-        #lecture = self.getDatafromCSV('../testdata/python01.csv', Lecture(0, 'python', 1))
-        #lecture.syncCodefromLecture()
-
-        # lecture2 = self.getDatafromCSV('../testdata/python02_test.csv', Lecture(1, 'python', 2))
-        # #self.insertIntoDB(lecture2)
-        # lecture2.syncCodefromLecture()
-        
-        # Extract year from path (parent directory)
-        # file path example: .../testdata/2025/python_test_2.csv
         file_path = os.path.abspath(file)
-        parent_dir = os.path.dirname(file_path)
-        dir_name = os.path.basename(parent_dir)
-        
-        try:
-            year = int(dir_name)
-        except ValueError:
-            year = 2025 # Default fallback
-            
-        division = int(re.findall(r'\d+', file)[-1])
-        if file.find('python') != -1 :
-            lecture = self.getDatafromCSV(file, Lecture(year, 'python', division))
-        elif file.find('system') != -1 :
-            lecture = self.getDatafromCSV(file, Lecture(year, 'system', division))
-        else :
-            lecture = self.getDatafromCSV(file, Lecture(year, '?', division))
+        parent = os.path.basename(os.path.dirname(file_path))
+        year = int(parent) if parent.isdigit() and len(parent) == 4 else date.today().year
+        match = re.fullmatch(r'(python|system)(?:_test)?_(\d+)\.csv', os.path.basename(file_path), re.I)
+        if not match:
+            raise ValueError('CSV filename must be system_3.csv or python_test_2.csv.')
+        lecture = self.getDatafromCSV(file, Lecture(year, match[1].lower(), int(match[2])))
         lecture.log_message.connect(self.log_message.emit)
-        lecture.syncCodefromLecture(self.progress_status)
+        return lecture.syncCodefromLecture(self.progress_status)
 
     def filterString(self, data):
         return re.sub(r'[^0-9]', '', data)
 
-    def getDatafromCSV(self, path, lecture:Lecture):
-        f = open(path, 'r', encoding='utf-8')
-        rdr = csv.reader(f)
-        for line in rdr:
-            sid = self.filterString(line[0])
-            s = Student(int(sid), name=line[1], sid=int(sid))
-            s.insertGithubLink(lecture, line[2])
-            lecture.addStudent(s)
-            self.max += 1
-        f.close()
+    def getDatafromCSV(self, path, lecture: Lecture):
+        # Validate the complete roster before performing any network operations.
+        from core.roster import read_roster
+        rows = read_roster(path)
+        if any(int(row['student_id']) in lecture.students for row in rows):
+            raise ValueError('CSV contains students already present in this lecture.')
+        for row in rows:
+            student = Student(int(row['student_id']), name=row['name'], sid=int(row['student_id']))
+            student.insertGithubLink(lecture, row['url'])
+            lecture.addStudent(student)
+        self.max = len(lecture.students)
+        if not self.max:
+            raise ValueError('CSV contains no students.')
         self.max_value.emit(self.max)
         return lecture
 
@@ -154,7 +142,7 @@ class Evaluator(QObject):
             full_path = os.path.join(chapter_path, entry)
             if os.path.isdir(full_path):
                  problems.append(entry)
-        return sorted(problems)
+        return sorted(problems, key=natural_key)
 
     def get_student_chapters(self, class_name, student_id):
         origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
@@ -186,9 +174,9 @@ class Evaluator(QObject):
         for entry in os.listdir(chapter_path):
             full_path = os.path.join(chapter_path, entry)
             if os.path.isdir(full_path):
-                if entry not in ['__pycache__']:
+                if not entry.startswith('.') and entry != '__pycache__':
                      problems.append(entry)
-        return sorted(problems)
+        return sorted(problems, key=natural_key)
 
     def get_student_files(self, class_name, student_id, chapter, problem=None):
         origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
@@ -240,9 +228,9 @@ class Evaluator(QObject):
             # Build rich log message
             log_str = f" - <b>{r['case']}</b>: "
             if r['passed']:
-                 log_str += f"<span style='color:blue;'>{status}</span>"
+                 log_str += f"<span style='font-weight:600;'>{status}</span>"
             else:
-                 log_str += f"<span style='color:red;'>{status}</span>"
+                 log_str += f"<span style='font-weight:600;'>{status}</span>"
             
             if 'message' in r and not r['passed'] and 'actual' not in r:
                 # Execution error (compile fail etc)
@@ -285,7 +273,10 @@ class Evaluator(QObject):
             return False, f"Target directory does not exist: {target_path}"
             
         try:
-            shutil.copy(src_file, target_path)
+            destination = safe_path(target_path, os.path.basename(src_file))
+            if destination.exists():
+                return False, 'File already exists.'
+            shutil.copy(src_file, destination)
             return True, "File added successfully."
         except Exception as e:
             return False, str(e)
@@ -300,9 +291,9 @@ class Evaluator(QObject):
         if not os.path.exists(target_path):
             return False, f"Target path not found: {target_path}"
             
-        full_path = os.path.join(target_path, filename)
         try:
-            with open(full_path, 'w', encoding='utf-8') as f:
+            full_path = safe_path(target_path, filename)
+            with open(full_path, 'x', encoding='utf-8') as f:
                 f.write(content)
             return True, f"File {filename} created."
         except Exception as e:
@@ -328,7 +319,7 @@ class Evaluator(QObject):
         except Exception as e:
             return False, f"Error deleting file: {e}"
 
-    def run_manual_code(self, class_name, student_id, runner_config, input_data, args=[], target_file=None):
+    def run_manual_code(self, class_name, student_id, runner_config, input_data, args=None, target_file=None):
         origin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'origin')
         target_dir = os.path.join(origin_path, class_name, student_id)
         
