@@ -1,5 +1,6 @@
 import subprocess
 import html
+import json
 from paths import case_path, parse_args
 from reports import save_report, CaseReport, summarize_cases
 from pathlib import Path
@@ -216,7 +217,7 @@ class Gui(QMainWindow):
         self.comboProblem.clear()
         for row in rows:
             status = '케이스 오류' if row['error'] else f"채점 {row['active']}개" if row['active'] else f"초안 {row['drafts']}개" if row['drafts'] else '케이스 없음'
-            self.comboProblem.addItem(f"{row['name']} · {status}", row['name'])
+            self.comboProblem.addItem(f"{row.get('label', row['name'])} · {status}", row['name'])
             self.comboProblem.setItemData(self.comboProblem.count()-1, row['error'] or row['path'], Qt.ItemDataRole.ToolTipRole)
         index = self.comboProblem.findData(current_problem)
         scope = (class_folder, chapter)
@@ -232,7 +233,21 @@ class Gui(QMainWindow):
         value = self.comboProblem.currentData()
         return value if isinstance(value, str) else self.comboProblem.currentText()
 
+    def isMidterm(self):
+        from midterm import is_midterm
+        return is_midterm(self.comboClass.currentData(), self.comboChapter.currentText())
+
+    def submissionProblem(self):
+        return None if self.isMidterm() or self.comboProblem.isHidden() else self.selectedProblem()
+
     def onProblemChanged(self):
+        midterm = self.isMidterm()
+        self.midtermPanel.setVisible(midterm)
+        self.midtermScoringInfo.setVisible(midterm)
+        self.btnAI.setVisible(not midterm)
+        self.btnCasePath.setVisible(not midterm)
+        self.comboProblem.parentWidget().layout().addWidget(self.comboProblem, 1, 3, 1, 4 if midterm else 1)
+        self.casePathPanel.setVisible(not midterm and self.btnCasePath.isChecked())
         self.updateTestCasePath()
         self.updateFileList()
 
@@ -242,7 +257,7 @@ class Gui(QMainWindow):
         
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
-        problem = self.selectedProblem()
+        problem = self.submissionProblem()
         
         if self.comboProblem.isHidden():
             problem = None # Ignore problem if hidden
@@ -255,13 +270,17 @@ class Gui(QMainWindow):
         
         files = self.eval.get_student_files(class_name, student_id, chapter, problem)
         self.listFiles.addItems(files)
+        if self.isMidterm():
+            matches = self.listFiles.findItems(self.selectedProblem(), Qt.MatchFlag.MatchExactly)
+            if matches:
+                self.listFiles.setCurrentItem(matches[0])
 
     def onFileDoubleClicked(self, item):
         filename = item.text()
         
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
-        problem = self.selectedProblem()
+        problem = self.submissionProblem()
         
         if self.comboProblem.isHidden():
             problem = None
@@ -282,7 +301,17 @@ class Gui(QMainWindow):
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
         problem = self.selectedProblem() if not self.comboProblem.isHidden() else None
-        self.txtTestCasePath.setText(str(case_path(class_name, chapter, problem)) if class_name and chapter else '')
+        if self.isMidterm():
+            from midterm import SUITE
+            self.txtTestCasePath.setText(str(SUITE))
+        else:
+            self.txtTestCasePath.setText(str(case_path(class_name, chapter, problem)) if class_name and chapter else '')
+        self.refreshCaseInfo()
+
+    def browseMidtermProfile(self):
+        path, _ = QFileDialog.getOpenFileName(self, '도서 입력·출력 프로필', self.txtMidtermProfile.text(), '프로필 (*.json)')
+        if path:
+            self.txtMidtermProfile.setText(path)
 
     def browseTestPath(self):
         path = QFileDialog.getExistingDirectory(self, "Select Test Case Directory")
@@ -318,7 +347,7 @@ class Gui(QMainWindow):
     def addFile(self):
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
-        problem = self.selectedProblem()
+        problem = self.submissionProblem()
         
         selected_items = self.listStudents.selectedItems()
         if not selected_items or not class_name:
@@ -342,7 +371,7 @@ class Gui(QMainWindow):
     def deleteFile(self):
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
-        problem = self.selectedProblem()
+        problem = self.submissionProblem()
         
         selected_students = self.listStudents.selectedItems()
         selected_files = self.listFiles.selectedItems()
@@ -394,6 +423,7 @@ class Gui(QMainWindow):
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
         problem = self.selectedProblem()
+        midterm = self.isMidterm()
         
         selected_items = self.listStudents.selectedItems()
         
@@ -417,7 +447,7 @@ class Gui(QMainWindow):
         runner_config = {
             'mode': mode,
             'chapter': chapter,
-            'problem': problem
+            'problem': self.submissionProblem()
         }
 
         self.log_output.append("<b>Starting Grading...</b>")
@@ -428,13 +458,21 @@ class Gui(QMainWindow):
             runner_config['problem'] = None
         try:
             from grader import Grader
-            cases = Grader().load_test_cases(test_case_dir)
+            bundle = None
+            if midterm:
+                from midterm import load_suite
+                from midterm_scoring import settings
+                bundle = load_suite(problem, self.txtMidtermProfile.text())
+                cases = bundle['cases']
+            else:
+                cases = Grader().load_test_cases(test_case_dir)
             if not cases:
                 raise ValueError('활성 케이스가 없습니다. AI 케이스 생성에서 검토 완료로 저장하거나 케이스 폴더를 확인하세요.')
-            report = CaseReport({'class_name': class_name, 'chapter': chapter, 'problem': runner_config['problem'],
+            report = CaseReport({'class_name': class_name, 'chapter': chapter, 'problem': problem if midterm else runner_config['problem'],
                                  'mode': mode, 'students': students, 'case_count': len(cases),
-                                 'case_directory': str(Path(test_case_dir).resolve()), 'cases': cases})
-        except (OSError, ValueError) as exc:
+                                 'case_directory': str(Path(test_case_dir).resolve()), 'cases': cases,
+                                 **({'midterm_suite': bundle, 'midterm_scoring': settings()} if midterm else {})})
+        except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
             QMessageBox.warning(self, '채점 준비 실패', str(exc))
             return
         self.case_report = report
@@ -462,11 +500,16 @@ class Gui(QMainWindow):
                         report.save(rows, 'cancelled')
                         return rows
                     try:
-                        results = grader.grade_student(ORIGIN / class_name / student, cases, runner_config)
+                        if midterm:
+                            from midterm import grade_suite
+                            results = grade_suite(ORIGIN / class_name / student / chapter, bundle, runner_config)
+                        else:
+                            results = grader.grade_student(ORIGIN / class_name / student, cases, runner_config)
                     except Exception as exc:
                         results = [{'case': 'Setup', 'passed': False, 'status': 'error', 'message': str(exc)}]
                     for result in results:
-                        rows.append(dict(result, class_name=class_name, student=student, chapter=chapter, problem=runner_config['problem']))
+                        rows.append(dict(result, class_name=class_name, student=student, chapter=chapter,
+                                         problem=result.get('target_file', problem) if midterm else runner_config['problem']))
                     report.save(rows)
                     progress(index)
                 report.save(rows, 'completed')
@@ -502,6 +545,9 @@ class Gui(QMainWindow):
                        self.btnSelectAll, self.btnClearSelection, self.btnQualitative, self.actionEnvironment,
                        self.radioWin, self.radioLinux, self.radioDocker, self.radioWSL):
             widget.setEnabled(not busy)
+        self.txtMidtermProfile.setEnabled(not busy)
+        self.btnMidtermProfile.setEnabled(not busy)
+        self.btnMidtermScore.setEnabled(not busy)
         self.btnStop.setEnabled(busy and self.grading_active)
 
     def updateSelectionSummary(self):
@@ -518,9 +564,13 @@ class Gui(QMainWindow):
         elif not self.active_case_count:
             self.batchSummary.setText('활성 케이스가 없습니다. ‘AI 케이스 생성’에서 검토 완료로 저장하세요.')
         else:
-            problem = self.selectedProblem() if not self.comboProblem.isHidden() else ''
+            problem = ('전체 문제 (7개 파일)' if self.selectedProblem() == '__all__' else self.selectedProblem()) if not self.comboProblem.isHidden() else ''
             mode = 'Docker' if self.radioDocker.isChecked() else ('WSL' if self.radioWSL.isChecked() else ('Linux' if self.radioLinux.isChecked() else 'Windows'))
-            self.batchSummary.setText(f'{self.comboClass.currentText()} · {self.comboChapter.currentText()} {problem} · 학생 {count}명 × 케이스 {self.active_case_count}개 · {mode}')
+            if self.isMidterm():
+                self.batchSummary.setText(f'{self.comboClass.currentText()} · midterm · {problem}\n학생 {count}명 × 케이스 {self.active_case_count}개 · {mode}')
+            else:
+                self.batchSummary.setText(f'{self.comboClass.currentText()} · {self.comboChapter.currentText()} {problem} · 학생 {count}명 × 케이스 {self.active_case_count}개 · {mode}')
+        self.batchSummary.setMinimumHeight(self.batchSummary.fontMetrics().lineSpacing() * 2 + 8 if self.isMidterm() else 0)
 
     def stopGrading(self):
         if self.grading_active and self.job and self.job.isRunning():
@@ -548,12 +598,23 @@ class Gui(QMainWindow):
 
     def refreshResultsTable(self):
         context = self.case_report.context if self.case_report else {}
+        scored = 'midterm_scoring' in context
+        self.btnMidtermScore.setVisible(scored)
+        if scored:
+            self.refreshMidtermScores()
+            return
+        self.resultLegend.setText('O 통과 · △ 부족(일부 통과) · X 오답(통과 없음) · — 미판정')
+        self.resultTable.setColumnCount(5)
+        self.resultTable.setHorizontalHeaderLabels(['학생', '판정', '기호', '통과 / 전체', '실패 케이스'])
+        self.resultTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.resultTable.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         summaries = summarize_cases(self.results, context.get('students'), context.get('case_count', 0),
                                     self.case_report.state if self.case_report else 'completed')
         selected = self.resultTable.currentRow()
         self.resultTable.blockSignals(True)
         self.resultTable.setRowCount(len(summaries))
-        labels = {'pending': '대기', 'not_run': '미실행', 'ungraded': '채점 불가', 'manual_review': '수동 검토'}
+        labels = {'pending': '대기', 'not_run': '미실행', 'ungraded': '채점 불가', 'manual_review': '수동 검토',
+                  'needs_review': '검토 필요'}
         for index, summary in enumerate(summaries):
             passed, total = summary['passed_cases'], summary['total_cases']
             status = labels.get(summary['status'], '모두 통과' if passed == total else '오답 있음')
@@ -577,23 +638,121 @@ class Gui(QMainWindow):
             self.resultTable.selectRow(selected)
             self.showResultDetails()
 
+    def midtermScores(self):
+        from midterm_scoring import score_students
+        return score_students(self.results, self.case_report.context, self.case_report.state,
+                              self.case_report.score_overrides)
+
+    def refreshMidtermScores(self):
+        from midterm import TARGETS
+        from midterm_scoring import POINTS
+        selected = self.resultTable.currentRow()
+        table = self.resultTable
+        table.blockSignals(True)
+        table.setColumnCount(12)
+        table.setHorizontalHeaderLabels(['학생', '점수 상태', '총점',
+            *[f'{TARGETS[t].split(" · ")[0]}\n{POINTS[t]}점' for t in POINTS], '통과 / 전체', '사유'])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(11, QHeaderView.ResizeMode.Interactive)
+        table.setColumnWidth(11, 340)
+        scores = self.midtermScores()
+        table.setRowCount(len(scores))
+        labels = {'graded': '자동 계산', 'adjusted': '점수 조정', 'needs_review': '검토 필요',
+                  'pending': '대기', 'not_run': '미실행'}
+        for index, row in enumerate(scores):
+            total = '검토 필요' if row['final_score'] is None else f'{row["final_score"]:g} / {row["max_score"]:g}'
+            values = [row['student'], labels[row['status']], total]
+            for target in POINTS:
+                problem = row['problems'].get(target)
+                values.append('—' if problem is None else ('검토' if problem['final_score'] is None else f'{problem["final_score"]:g}'))
+            values.append(f'{row["passed_cases"]} / {row["total_cases"]}')
+            values.append(row['reason_short'])
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if column == 11:
+                    item.setToolTip(row['reason'])
+                if 3 <= column <= 9:
+                    target = list(POINTS)[column - 3]
+                    problem = row['problems'].get(target)
+                    item.setToolTip(target + (f'\n필수 통과 {problem["passed_required"]}/{problem["required_cases"]}'
+                                              f'\n자동 {problem["auto_score"]} / 최종 {problem["final_score"]} / 배점 {problem["max_score"]}' if problem else '\n이번 실행에서 선택하지 않은 문제'))
+                table.setItem(index, column, item)
+        table.blockSignals(False)
+        self.resultLegend.setText('점수 = 문제 배점 × 필수 케이스 통과 비율 (소수 둘째 자리) · 추가 케이스는 점수 제외 · 검토 문제는 총점 미확정')
+        if 0 <= selected < len(scores):
+            table.selectRow(selected)
+            self.showResultDetails()
+
+    def adjustMidtermScore(self):
+        if self.grading_active or not self.case_report or 'midterm_scoring' not in self.case_report.context:
+            return
+        if self.resultTable.currentRow() < 0 and self.resultTable.rowCount():
+            self.resultTable.selectRow(0)
+        if self.resultTable.currentRow() < 0:
+            return
+        student = self.resultTable.item(self.resultTable.currentRow(), 0).text()
+        row = next(s for s in self.midtermScores() if s['student'] == student)
+        from midterm import TARGETS
+        dialog = QDialog(self); dialog.setWindowTitle(f'{student} · 문제 점수 조정')
+        form = QFormLayout(dialog)
+        target = QComboBox()
+        for filename, problem in row['problems'].items():
+            target.addItem(f'{TARGETS[filename]} [{filename}] · {problem["max_score"]}점', filename)
+        score = QDoubleSpinBox(); score.setDecimals(2); score.setObjectName('midtermFinalScore')
+        auto = QLabel()
+        def select_problem():
+            problem = row['problems'][target.currentData()]
+            score.setRange(0, problem['max_score']); score.setValue(problem['final_score'] or 0)
+            auto.setText(f'자동 점수: {problem["auto_score"] if problem["auto_score"] is not None else "미확정"} · 자동 판정과 이전 조정 이력을 보존합니다.')
+        target.currentIndexChanged.connect(select_problem); select_problem()
+        reviewer = QLineEdit(); reviewer.setObjectName('midtermReviewer')
+        reason = QLineEdit(); reason.setObjectName('midtermReason')
+        error = QLabel(); error.setWordWrap(True)
+        save = QPushButton('점수 저장'); save.setObjectName('saveMidtermScore')
+        form.addRow('문제', target); form.addRow(auto); form.addRow('최종 점수', score)
+        form.addRow('검토자', reviewer); form.addRow('조정 사유', reason); form.addRow(error); form.addRow(save)
+        def persist():
+            try:
+                self.case_report.override_midterm_score(student, target.currentData(), score.value(), reviewer.text(), reason.text())
+                self.refreshResultsTable()
+                dialog.accept()
+            except (OSError, ValueError) as exc:
+                error.setText(str(exc))
+        save.clicked.connect(persist)
+        dialog.exec()
+
     def showResultDetails(self):
         index = self.resultTable.currentRow()
         if index < 0 or self.resultTable.item(index, 0) is None:
             return
         student = self.resultTable.item(index, 0).text()
         lines = [f'학생 {student} · 케이스별 상세 결과']
+        if self.case_report and 'midterm_scoring' in self.case_report.context:
+            summary = next(s for s in self.midtermScores() if s['student'] == student)
+            lines.append(f'총점: {summary["final_score"]} / {summary["max_score"]} · 문제별 필수 케이스 통과 비율 적용')
+            lines.extend(['사유:', summary['reason']])
+            for target, score in summary['problems'].items():
+                lines.append(f'{target}: 자동 {score["auto_score"]}, 최종 {score["final_score"]} / {score["max_score"]}점 · 필수 {score["passed_required"]}/{score["required_cases"]}')
+                for adjustment in score['overrides']:
+                    lines.append(f'점수 조정: {adjustment["previous_score"]} → {adjustment["score"]} · {adjustment["reviewer"]} · {adjustment["reason"]} · {adjustment["at"]}')
         labels = {'passed': '통과', 'wrong_answer': '오답', 'compile_error': '컴파일 오류',
                   'runtime_error': '실행 오류', 'timeout': '시간 초과', 'output_limit': '출력 제한 초과',
-                  'missing': '제출 경로 없음', 'error': '채점 오류', 'no_tests': '케이스 없음'}
+                  'missing': '제출 경로 없음', 'error': '채점 오류', 'no_tests': '케이스 없음', 'needs_review': '검토 필요'}
+        def display(value):
+            return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
         for row in self.results:
             if row['student'] != student:
                 continue
             lines.extend(['', f"[{row['case']}] {labels.get(row['status'], row['status'])}"])
+            if row.get('target_file'): lines.append('대상 파일: ' + row['target_file'])
             if row.get('message'): lines.append(row['message'])
-            if row.get('expected') is not None: lines.extend(['기대 출력:', row['expected']])
-            if row.get('actual') is not None: lines.extend(['실제 출력:', row['actual']])
+            if row.get('expected') is not None: lines.extend(['기대 출력:', display(row['expected'])])
+            if row.get('actual') is not None: lines.extend(['실제 출력:', display(row['actual'])])
             if row.get('stderr'): lines.extend(['오류 출력:', row['stderr']])
+            for step in row.get('trace', []):
+                lines.extend([f"실행 단계: {step['source']} (종료 코드 {step.get('returncode')})",
+                              '입력:', step.get('input', ''), '출력:', step.get('stdout', '')])
+                if step.get('stderr'): lines.extend(['오류 출력:', step['stderr']])
             for filename, result in row.get('file_results', {}).items():
                 lines.extend([f"파일 {filename}: {'통과' if result['passed'] else '미통과'}",
                               '기대 내용:', result['expected'], '실제 내용:', result['actual'] if result['actual'] is not None else '(파일 없음 또는 크기 초과)'])
@@ -619,14 +778,20 @@ class Gui(QMainWindow):
             self.log_output.append('<b>' + html.escape(f"{row['student']} / {row['case']}: {row['status']}") + '</b>')
             self.log_output.append('<pre>' + html.escape(str(row.get('message') or row.get('actual', ''))) + '</pre>')
             if not row['passed'] and row.get('expected') is not None:
-                self.log_output.append('<pre>Expected: ' + html.escape(row['expected']) + '</pre>')
+                self.log_output.append('<pre>Expected: ' + html.escape(str(row['expected'])) + '</pre>')
             if row.get('files'):
                 self.log_output.append(html.escape(str(row['files'])))
         self.log_output.append(f"Finished: {sum(r['passed'] for r in rows)}/{len(rows)} passed")
-        labels = {'graded': '판정 완료', 'ungraded': '채점 불가', 'not_run': '미실행', 'pending': '대기', 'manual_review': '수동 검토'}
-        for summary in summarize_cases(rows):
-            count = '점수 없음' if summary['passed_cases'] is None else f"{summary['passed_cases']}/{summary['total_cases']} 케이스 통과"
-            self.log_output.append(html.escape(f"{summary['student']}: {labels[summary['status']]} · {count}"))
+        labels = {'graded': '판정 완료', 'ungraded': '채점 불가', 'not_run': '미실행', 'pending': '대기',
+                  'manual_review': '수동 검토', 'needs_review': '검토 필요'}
+        if self.case_report and 'midterm_scoring' in self.case_report.context:
+            for summary in self.midtermScores():
+                text = '총점 미확정 · 검토 필요' if summary['final_score'] is None else f"{summary['final_score']:g} / {summary['max_score']:g}점"
+                self.log_output.append(html.escape(f"{summary['student']}: {text}"))
+        else:
+            for summary in summarize_cases(rows):
+                count = '점수 없음' if summary['passed_cases'] is None else f"{summary['passed_cases']}/{summary['total_cases']} 케이스 통과"
+                self.log_output.append(html.escape(f"{summary['student']}: {labels[summary['status']]} · {count}"))
         if self.case_report:
             self.showReportLocation()
             self.log_output.append(html.escape(f'자동 저장: {self.case_report.directory}'))
@@ -634,10 +799,20 @@ class Gui(QMainWindow):
     def refreshCaseInfo(self):
         from grader import Grader
         try:
-            cases = Grader().load_test_cases(self.txtTestCasePath.text()) if self.txtTestCasePath.text() else []
+            if self.isMidterm():
+                from midterm import load_suite
+                from midterm_scoring import POINTS
+                cases = load_suite(self.selectedProblem(), self.txtMidtermProfile.text())['cases']
+            else:
+                cases = Grader().load_test_cases(self.txtTestCasePath.text()) if self.txtTestCasePath.text() else []
             self.active_case_count = len(cases)
-            self.case_info.setText(f'활성 케이스 {len(cases)}개 · 초안은 제외됩니다.' if cases else '활성 케이스 없음 · AI 케이스를 생성하거나 케이스 폴더를 선택하세요.')
-        except (OSError, ValueError) as exc:
+            if self.isMidterm():
+                required = sum(c.get('category') != 'extra' for c in cases)
+                points = sum(POINTS[t] for t in {c['target_file'] for c in cases})
+                self.case_info.setText(f'배점 {points}점 · 필수 {required}개로 점수 계산 / 추가 {len(cases) - required}개는 진단용 · True = 대출 가능')
+            else:
+                self.case_info.setText(f'활성 케이스 {len(cases)}개 · 초안은 제외됩니다.' if cases else '활성 케이스 없음 · AI 케이스를 생성하거나 케이스 폴더를 선택하세요.')
+        except (OSError, ValueError, KeyError, TypeError) as exc:
             self.active_case_count = 0
             self.case_info.setText('케이스 확인 오류: ' + str(exc))
         self.updateSelectionSummary()
@@ -645,7 +820,8 @@ class Gui(QMainWindow):
     def showReportLocation(self):
         self.report_location.setText(f'자동 저장: {self.case_report.directory}')
         self.report_location.setCursorPosition(0)
-        self.report_location.setToolTip(f'{self.case_report.directory}\nrun.json: 전체 근거 · cases.csv: 케이스별 판정 · summary.csv: 학생별 통과 수')
+        summary = '문제별 점수·총점' if 'midterm_scoring' in self.case_report.context else '학생별 통과 수'
+        self.report_location.setToolTip(f'{self.case_report.directory}\nrun.json: 전체 근거 · cases.csv: 케이스별 판정 · summary.csv: {summary}')
         self.btnOpenReport.setEnabled(True)
 
     def openReportFolder(self):
@@ -717,7 +893,16 @@ class Gui(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, 'Export results', 'results.csv', 'CSV (*.csv);;JSON (*.json)')
         if path:
             try:
-                save_report(path, self.results)
+                if self.case_report and 'midterm_scoring' in self.case_report.context:
+                    if Path(path).suffix.lower() == '.csv':
+                        from midterm_scoring import export_scores
+                        export_scores(path, self.midtermScores())
+                    else:
+                        from core.record import atomic_text
+                        document = json.loads((self.case_report.directory / 'run.json').read_text(encoding='utf-8'))
+                        atomic_text(path, json.dumps(document, ensure_ascii=False, indent=2))
+                else:
+                    save_report(path, self.results)
             except OSError as exc:
                 QMessageBox.warning(self, 'Export', str(exc))
 
@@ -745,7 +930,7 @@ class Gui(QMainWindow):
             self.qualitative_window.raise_()
             return
         chapter = self.comboChapter.currentText()
-        problem = None if self.comboProblem.isHidden() else self.selectedProblem()
+        problem = self.submissionProblem()
         if not chapter or chapter == '(No Files)':
             QMessageBox.information(self, '정성평가', '평가할 장과 문제를 선택하세요.')
             return
@@ -815,7 +1000,7 @@ class Gui(QMainWindow):
     def runManual(self):
         class_name = self.comboClass.currentData()
         chapter = self.comboChapter.currentText()
-        problem = self.selectedProblem()
+        problem = self.submissionProblem()
         
         selected_items = self.listStudents.selectedItems()
         if not class_name or len(selected_items) != 1:
@@ -843,6 +1028,12 @@ class Gui(QMainWindow):
         file_selection = self.listFiles.selectedItems()
         if file_selection:
             target_file = file_selection[0].text()
+        if self.isMidterm():
+            from midterm import TARGETS
+            if not target_file and self.selectedProblem() in TARGETS:
+                target_file = self.selectedProblem()
+            if target_file and target_file.endswith('.c'):
+                runner_config['sources'] = [target_file]
         
         input_data = self.txtManualInput.toPlainText()
         args_str = self.txtManualArgs.text()

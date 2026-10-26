@@ -1,0 +1,21 @@
+{
+  "name": "copy_1_multiline_symbols",
+  "target_file": "copy.c",
+  "sources": [
+    "copy.c"
+  ],
+  "args": [
+    "1",
+    "source.txt",
+    "destination.txt"
+  ],
+  "files": {
+    "destination.txt": "  abc xyz 123!?\tend\n\nmixed (az)\n",
+    "source.txt": "  AbC xyz 123!?\tEND\n\nMiXeD (aZ)\n"
+  },
+  "file_comparison": "exact",
+  "comparison": "regex",
+  "expected": ".*\\ \\ abc\\ xyz\\ 123!\\?\\\tend\\\n\\\nmixed\\ \\(az\\).*",
+  "timeout": 10,
+  "description": "복사 결과와 원본 불변을 검사. 화면 안내 문구는 허용."
+}

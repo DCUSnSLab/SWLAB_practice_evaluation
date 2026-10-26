@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 
 from core.manifest import number
 
@@ -25,7 +26,15 @@ def atomic_text(path, text):
             stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temp, path)
+        for attempt in range(6):
+            try:
+                os.replace(temp, path)
+                break
+            except PermissionError:
+                # Windows briefly locks a report while the GUI reads progress.
+                if os.name != 'nt' or attempt == 5:
+                    raise
+                time.sleep(.01 * (attempt + 1))
     finally:
         if temp and temp.exists():
             temp.unlink()

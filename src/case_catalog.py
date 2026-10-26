@@ -10,6 +10,9 @@ def is_case(folder):
 
 
 def problem_catalog(class_name, chapter, submissions=()):
+    from midterm import is_midterm, problem_rows
+    if is_midterm(class_name, chapter):
+        return problem_rows()
     root = case_path(class_name, chapter)
     names = set(submissions)
     if root.is_dir():

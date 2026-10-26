@@ -1,0 +1,20 @@
+{
+  "name": "copy_1_space_paths",
+  "target_file": "copy.c",
+  "sources": [
+    "copy.c"
+  ],
+  "args": [
+    "1",
+    "source file.txt",
+    "destination file.txt"
+  ],
+  "files": {
+    "destination file.txt": "space path abc\n",
+    "source file.txt": "Space Path AbC\n"
+  },
+  "file_comparison": "exact",
+  "comparison": "regex",
+  "expected": ".*space path abc.*",
+  "timeout": 10
+}

@@ -1,0 +1,535 @@
+{
+  "source": "중간고사_실습_1_2026.pdf, pages 2-6",
+  "datasets": {
+    "exam": [
+      [
+        1,
+        "1984",
+        "George",
+        1949,
+        7,
+        false
+      ],
+      [
+        2,
+        "Luster",
+        "Raven",
+        2020,
+        3,
+        true
+      ],
+      [
+        3,
+        "Hamnet",
+        "Maggie",
+        2020,
+        0,
+        false
+      ],
+      [
+        4,
+        "theWish",
+        "Nocholas",
+        2021,
+        2,
+        true
+      ]
+    ],
+    "reverse": [
+      [
+        4,
+        "theWish",
+        "Nocholas",
+        2021,
+        2,
+        true
+      ],
+      [
+        3,
+        "Hamnet",
+        "Maggie",
+        2020,
+        0,
+        false
+      ],
+      [
+        2,
+        "Luster",
+        "Raven",
+        2020,
+        3,
+        true
+      ],
+      [
+        1,
+        "1984",
+        "George",
+        1949,
+        7,
+        false
+      ]
+    ],
+    "single": [
+      [
+        3,
+        "Hamnet",
+        "Maggie",
+        2020,
+        0,
+        false
+      ]
+    ],
+    "all_available": [
+      [
+        1,
+        "1984",
+        "George",
+        1949,
+        7,
+        true
+      ],
+      [
+        2,
+        "Luster",
+        "Raven",
+        2020,
+        3,
+        true
+      ],
+      [
+        3,
+        "Hamnet",
+        "Maggie",
+        2020,
+        0,
+        true
+      ],
+      [
+        4,
+        "theWish",
+        "Nocholas",
+        2021,
+        2,
+        true
+      ]
+    ],
+    "all_borrowed": [
+      [
+        1,
+        "1984",
+        "George",
+        1949,
+        7,
+        false
+      ],
+      [
+        2,
+        "Luster",
+        "Raven",
+        2020,
+        3,
+        false
+      ],
+      [
+        3,
+        "Hamnet",
+        "Maggie",
+        2020,
+        0,
+        false
+      ],
+      [
+        4,
+        "theWish",
+        "Nocholas",
+        2021,
+        2,
+        false
+      ]
+    ],
+    "ties": [
+      [
+        1,
+        "Alpha",
+        "One",
+        2018,
+        2,
+        false
+      ],
+      [
+        2,
+        "Beta",
+        "Two",
+        2022,
+        5,
+        true
+      ],
+      [
+        3,
+        "Gamma",
+        "Three",
+        2022,
+        5,
+        false
+      ],
+      [
+        4,
+        "Delta",
+        "Four",
+        2001,
+        0,
+        true
+      ]
+    ],
+    "sparse_ids": [
+      [
+        11,
+        "Eleven",
+        "One",
+        2000,
+        4,
+        false
+      ],
+      [
+        42,
+        "FortyTwo",
+        "Two",
+        2025,
+        2,
+        true
+      ],
+      [
+        7,
+        "Seven",
+        "Three",
+        1998,
+        9,
+        false
+      ]
+    ],
+    "exam_q3": [
+      [
+        1,
+        "1984",
+        "George",
+        1949,
+        7,
+        false
+      ],
+      [
+        2,
+        "Luster",
+        "Raven",
+        2020,
+        3,
+        true
+      ],
+      [
+        3,
+        "Hamnet",
+        "Maggie",
+        2020,
+        1,
+        false
+      ],
+      [
+        4,
+        "theWish",
+        "Nocholas",
+        2021,
+        2,
+        true
+      ]
+    ]
+  },
+  "cases": [
+    {
+      "name": "register_exam_records",
+      "target_file": "bookcreate.c",
+      "dataset": "exam"
+    },
+    {
+      "name": "register_single",
+      "target_file": "bookcreate.c",
+      "dataset": "single",
+      "category": "extra"
+    },
+    {
+      "name": "register_input_not_hardcoded",
+      "target_file": "bookcreate.c",
+      "dataset": "ties",
+      "category": "extra"
+    },
+    {
+      "name": "query_all",
+      "target_file": "bookquery.c",
+      "dataset": "exam",
+      "option": 0
+    },
+    {
+      "name": "query_available",
+      "target_file": "bookquery.c",
+      "dataset": "exam",
+      "option": 1
+    },
+    {
+      "name": "query_all_available",
+      "target_file": "bookquery.c",
+      "dataset": "all_available",
+      "option": 1,
+      "category": "extra"
+    },
+    {
+      "name": "query_none_available",
+      "target_file": "bookquery.c",
+      "dataset": "all_borrowed",
+      "option": 1,
+      "category": "extra"
+    },
+    {
+      "name": "borrow_available_luster",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "borrow_last_available",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "reject_already_borrowed_1984",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "reject_middle_borrowed",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          0,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "return_middle",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "return_first",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "name": "borrow_return_borrow",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "reject_second_borrow",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          0,
+          4
+        ],
+        [
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "independent_books",
+      "target_file": "bookupdate.c",
+      "dataset": "exam",
+      "operations": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          4
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "borrow_sparse_id",
+      "target_file": "bookupdate.c",
+      "dataset": "sparse_ids",
+      "operations": [
+        [
+          0,
+          42
+        ]
+      ],
+      "category": "extra"
+    },
+    {
+      "name": "sort_borrow_count",
+      "target_file": "sortedbookquery.c",
+      "dataset": "exam",
+      "order": "count"
+    },
+    {
+      "name": "sort_exam_q3_snapshot",
+      "target_file": "sortedbookquery.c",
+      "dataset": "exam_q3",
+      "order": "count"
+    },
+    {
+      "name": "sort_counts_with_ties",
+      "target_file": "sortedbookquery.c",
+      "dataset": "ties",
+      "order": "count",
+      "category": "extra"
+    },
+    {
+      "name": "search_numeric_title",
+      "target_file": "searchbook.c",
+      "dataset": "exam",
+      "search": "1984"
+    },
+    {
+      "name": "search_available_luster",
+      "target_file": "searchbook.c",
+      "dataset": "exam",
+      "search": "Luster"
+    },
+    {
+      "name": "search_on_loan_hamnet",
+      "target_file": "searchbook.c",
+      "dataset": "exam",
+      "search": "Hamnet"
+    },
+    {
+      "name": "search_last",
+      "target_file": "searchbook.c",
+      "dataset": "exam",
+      "search": "theWish"
+    },
+    {
+      "name": "search_missing",
+      "target_file": "searchbook.c",
+      "dataset": "exam",
+      "search": "princess"
+    },
+    {
+      "name": "search_case_sensitive",
+      "target_file": "searchbook.c",
+      "dataset": "exam",
+      "search": "luster"
+    },
+    {
+      "name": "search_exact_not_prefix",
+      "target_file": "searchbook.c",
+      "dataset": "exam",
+      "search": "Ham"
+    },
+    {
+      "name": "store_year_descending",
+      "target_file": "sortedbookcreate.c",
+      "dataset": "exam",
+      "order": "year"
+    },
+    {
+      "name": "store_year_descending_reverse_input",
+      "target_file": "sortedbookcreate.c",
+      "dataset": "reverse",
+      "order": "year"
+    },
+    {
+      "name": "store_year_ties",
+      "target_file": "sortedbookcreate.c",
+      "dataset": "ties",
+      "order": "year",
+      "category": "extra"
+    },
+    {
+      "name": "store_single",
+      "target_file": "sortedbookcreate.c",
+      "dataset": "single",
+      "order": "year",
+      "category": "extra"
+    },
+    {
+      "name": "copy_missing_source",
+      "target_file": "copy.c",
+      "kind": "missing_source",
+      "args": [
+        "0",
+        "source.txt",
+        "destination.txt"
+      ],
+      "error_regex": "error|fail|cannot|can.t|not\\s+found|no\\s+such|invalid|오류|에러|실패|없|불가|디렉터리|directory|denied"
+    },
+    {
+      "name": "copy_destination_directory",
+      "target_file": "copy.c",
+      "kind": "destination_directory",
+      "args": [
+        "0",
+        "source.txt",
+        "destination.txt"
+      ],
+      "error_regex": "error|fail|cannot|can.t|not\\s+found|no\\s+such|invalid|오류|에러|실패|없|불가|디렉터리|directory|denied"
+    }
+  ],
+  "status_semantics": "True/1 = available, False/0 = on loan (instructor clarification)"
+}
