@@ -5,7 +5,6 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 import tempfile
 import urllib.error
 import urllib.request
@@ -15,6 +14,7 @@ import uuid
 from grader import Grader
 from paths import safe_path
 from llm_config import llm_settings
+from reference_program import snapshot_reference
 
 MAX_TEXT = 65536
 
@@ -195,17 +195,12 @@ def validate_bundle(bundle):
 def fill_from_reference(bundle, solution, progress=lambda value: None):
     """Obtain the oracle from instructor-supplied code; never execute LLM code."""
     result = deepcopy(validate_bundle(bundle))
-    source = Path(solution).resolve()
-    if not source.is_file() or source.suffix not in ('.c', '.py'):
-        raise ValueError('Select an instructor reference .c or .py file.')
+    program = snapshot_reference(solution)
     grader = Grader()
     for index, case in enumerate(result['cases'], 1):
         with tempfile.TemporaryDirectory(prefix='swlab-oracle-') as temporary:
             work = Path(temporary) / 'work'
-            for link in source.parent.rglob('*'):
-                if link.is_symlink():
-                    raise ValueError('Reference folders with symlinks are not supported.')
-            shutil.copytree(source.parent, work, ignore=shutil.ignore_patterns('.git', '__pycache__', '.venv'))
+            program.copy_to(work)
             for filename in case['files']:
                 path = safe_path(work, filename)
                 if path.is_file():
@@ -214,7 +209,7 @@ def fill_from_reference(bundle, solution, progress=lambda value: None):
                 path = safe_path(work, filename)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(text, encoding='utf-8', newline='')
-            run = grader.execute(work, case['input'], case['args'], {'mode': 'docker', 'timeout': 15}, source.name)
+            run = grader.execute(work, case['input'], case['args'], program.runner_config, program.entry)
             if run['timed_out'] or run['output_limit'] or run.get('compile_error') or run['returncode'] is None or not 0 <= run['returncode'] < 125 or run['returncode'] != case['exit_code']:
                 reason = ('실행 시간 초과' if run['timed_out'] else '출력 크기 초과' if run['output_limit'] else
                           '컴파일 실패' if run.get('compile_error') else '실행 환경 오류' if run['returncode'] is None else
@@ -237,21 +232,29 @@ def bundle_digest(bundle):
     return hashlib.sha256(json.dumps(validate_bundle(bundle), sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
 
 
-def verification_matches(bundle, metadata):
+def verification_matches(bundle, metadata, reference=None):
     evidence = metadata.get('verification', {})
-    return evidence.get('bundle_sha256') == bundle_digest(bundle) and evidence.get('repeated_runs') == 2
+    if evidence.get('bundle_sha256') != bundle_digest(bundle) or evidence.get('repeated_runs') != 2:
+        return False
+    if reference is not None:
+        try:
+            return snapshot_reference(reference).digest == evidence.get('reference_sha256')
+        except (OSError, ValueError):
+            return False
+    return True
 
 
 def verify_with_reference(bundle, solution, wrong_solutions=(), progress=lambda value: None):
     """Check a trusted oracle twice and demonstrate detection of supplied wrong programs."""
     original = validate_bundle(bundle)
-    corrected = fill_from_reference(original, solution, progress)
-    repeated = fill_from_reference(corrected, solution, progress)
+    program = snapshot_reference(solution)
+    corrected = fill_from_reference(original, program, progress)
+    repeated = fill_from_reference(corrected, program, progress)
     if corrected != repeated:
         raise ValueError('기준 코드의 반복 실행 결과가 다릅니다. 고정된 기대값으로 채점할 수 없습니다.')
     evidence = {'bundle_sha256': bundle_digest(corrected), 'repeated_runs': 2,
-                'reference': str(Path(solution).resolve()),
-                'reference_sha256': hashlib.sha256(Path(solution).read_bytes()).hexdigest(),
+                'reference': str(program.root / program.entry), 'reference_entry': program.entry,
+                'reference_files': program.manifest, 'reference_sha256': program.digest,
                 'checked_cases': len(corrected['cases']), 'corrections': [], 'wrong_programs': []}
     for before, after in zip(original['cases'], corrected['cases']):
         if any(before[key] != after[key] for key in ('expected', 'files', 'exit_code')):

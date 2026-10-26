@@ -13,6 +13,7 @@ from materials import build_catalog
 from paths import case_path, lecture_name
 from case_catalog import target_label
 from slide_picker import SlidePicker
+from reference_program import snapshot_reference
 
 
 class AICaseMaker(QWidget):
@@ -24,6 +25,7 @@ class AICaseMaker(QWidget):
         self.job = None
         self.busy = False
         self.wrong_solutions = []
+        self.reference_files = ()
         self.generated_metadata = {}
         self.setting_preview = False
         self.problem_source = '직접 입력'
@@ -91,11 +93,21 @@ class AICaseMaker(QWidget):
         left_layout.addLayout(form)
         reference = QHBoxLayout()
         self.reference = QLineEdit()
-        self.reference.setPlaceholderText('교수자 기준 코드(선택) — 학생 제출물 사용 금지')
-        self.reference_browse = QPushButton('찾기')
+        self.reference.setReadOnly(True)
+        self.reference.setPlaceholderText('교수자 기준 코드 파일들(선택)')
+        self.reference_entry = QComboBox()
+        self.reference_entry.setMinimumContentsLength(6)
+        self.reference_entry.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.reference_entry.setToolTip('실행 기준 파일. C는 선택한 .c 파일들을 함께 컴파일하고, Python은 이 파일을 실행합니다. 한 프로그램의 소스·헤더를 함께 선택하세요.')
+        self.reference_entry.currentIndexChanged.connect(self.reference_changed)
+        self.reference_browse = QPushButton('파일 선택…')
         self.reference_browse.clicked.connect(self.browse_reference)
-        reference.addWidget(self.reference)
+        self.reference_clear = QPushButton('해제')
+        self.reference_clear.clicked.connect(lambda: self.set_reference_files([]))
+        reference.addWidget(self.reference, 1)
+        reference.addWidget(self.reference_entry)
         reference.addWidget(self.reference_browse)
+        reference.addWidget(self.reference_clear)
         left_layout.addLayout(reference)
         wrong = QHBoxLayout()
         self.wrong_label = QLabel('오답 예제: 선택 안 됨 · 검사 범위 미검증')
@@ -163,7 +175,7 @@ class AICaseMaker(QWidget):
         self.chapter.editingFinished.connect(self.normalize_target)
         self.problem.editingFinished.connect(self.normalize_target)
         self.problem_text.textChanged.connect(self.context_changed)
-        self.reference.textChanged.connect(self.reference_changed)
+        self.reference.textChanged.connect(self.reference_text_changed)
         self.context_changed()
         self.set_busy(False)
 
@@ -173,6 +185,7 @@ class AICaseMaker(QWidget):
     def set_busy(self, busy):
         self.busy = busy
         for widget in (self.url, self.model, self.connect_button, self.reference_browse,
+                       self.reference_entry, self.reference_clear,
                        self.load_button, self.problem_text, self.course, self.chapter, self.problem,
                        self.count, self.reference, self.generate_button, self.editor,
                        self.wrong_button, self.clear_wrong_button, self.manual_review):
@@ -185,7 +198,7 @@ class AICaseMaker(QWidget):
     def update_quality(self):
         try:
             bundle = self.read_preview()
-            verified = verification_matches(bundle, self.generated_metadata)
+            verified = self.verification_current(bundle)
             has_answers = all(c['expected'] is not None or c['files'] for c in bundle['cases'])
         except ValueError:
             self.save_button.setEnabled(False)
@@ -203,6 +216,8 @@ class AICaseMaker(QWidget):
             evidence = self.generated_metadata['verification']
             detection = f"오답 예제 {len(evidence['wrong_programs'])}개 탐지" if evidence['wrong_programs'] else '오답 탐지 범위 미검증'
             label = f"기준 코드 2회 일치 · 기대값 {len(evidence['corrections'])}개 수정 · {detection}"
+        elif self.generated_metadata.get('verification'):
+            label = '기준 코드 파일 또는 케이스가 변경되었습니다. 다시 검증하세요.'
         else:
             label = '기대값 미검증 · AI 추정값입니다. 기준 코드로 검증하거나 직접 확인 후 수동 검토를 표시하세요.'
         self.quality.setText(label)
@@ -318,6 +333,50 @@ class AICaseMaker(QWidget):
         if self.generated_metadata.get('verification') or self.generated_metadata.get('verification_error'):
             self.invalidate_verification()
 
+    def reference_text_changed(self):
+        self.reference_files = ()
+        self.reference_entry.blockSignals(True)
+        self.reference_entry.clear()
+        self.reference_entry.blockSignals(False)
+        self.reference_changed()
+
+    def set_reference_files(self, paths):
+        try:
+            program = snapshot_reference(paths) if paths else None
+        except (OSError, ValueError) as error:
+            self.status.setText(str(error))
+            return
+        self.reference_files = tuple(str(program.root / file.name) for file in program.files) if program else ()
+        self.reference.blockSignals(True)
+        self.reference_entry.blockSignals(True)
+        self.reference_entry.clear()
+        if program:
+            for file in program.files:
+                if file.name.endswith(('.c', '.py')):
+                    self.reference_entry.addItem(file.name, file.name)
+            self.reference_entry.setCurrentIndex(self.reference_entry.findData(program.entry))
+            self.reference.setText(f'{len(program.files)}개 파일 · ' + ', '.join(file.name for file in program.files))
+            self.reference.setCursorPosition(0)
+        else:
+            self.reference.clear()
+        self.reference.setToolTip('\n'.join(self.reference_files))
+        self.reference.blockSignals(False)
+        self.reference_entry.blockSignals(False)
+        self.invalidate_verification()
+
+    def selected_reference(self):
+        if self.reference_files:
+            return snapshot_reference(self.reference_files, self.reference_entry.currentData())
+        path = self.reference.text().strip()
+        return snapshot_reference(path) if path else None
+
+    def verification_current(self, bundle):
+        try:
+            reference = self.selected_reference()
+        except (OSError, ValueError):
+            return False
+        return verification_matches(bundle, self.generated_metadata, reference)
+
     def load_problem(self):
         picker = SlidePicker(self.decks, self.chapter.text().strip(), self.problem.text().strip(),
                              self.slide_selection, self)
@@ -349,9 +408,9 @@ class AICaseMaker(QWidget):
         self.context_changed()
 
     def browse_reference(self):
-        path, _ = QFileDialog.getOpenFileName(self, '교수자 기준 코드', '', 'Source (*.c *.py)')
-        if path:
-            self.reference.setText(path)
+        paths, _ = QFileDialog.getOpenFileNames(self, '한 프로그램의 교수자 기준 소스·헤더를 함께 선택', '', 'Source (*.c *.h *.py)')
+        if paths:
+            self.set_reference_files(paths)
 
     def source_label(self):
         return self.problem_source
@@ -366,11 +425,11 @@ class AICaseMaker(QWidget):
             problem = self.problem_text.toPlainText()
             if not problem.strip():
                 raise ValueError('문제 설명을 입력하세요.')
-        except ValueError as error:
+            reference = self.selected_reference()
+        except (OSError, ValueError) as error:
             self.status.setText(str(error))
             return
         count = self.count.value()
-        reference = self.reference.text().strip()
         wrong_solutions = tuple(self.wrong_solutions)
         metadata = provenance(client, problem, self.source_label())
         metadata['target'] = target
@@ -400,7 +459,7 @@ class AICaseMaker(QWidget):
         self.setting_preview = False
         self.manual_review.setChecked(False)
         self.refresh_table()
-        verified = verification_matches(self.read_preview(), self.generated_metadata)
+        verified = self.verification_current(self.read_preview())
         label = '기준 코드로 검증한 기대값' if verified else '미검증 기대값'
         if self.generated_metadata.get('verification_error'):
             label = '검증 실패 · 오류를 수정하고 다시 검증하세요'
@@ -459,10 +518,10 @@ class AICaseMaker(QWidget):
             if self.context_error():
                 raise ValueError(self.context_error())
             bundle = self.read_preview()
-            solution = self.reference.text().strip()
+            solution = self.selected_reference()
             if not solution:
                 raise ValueError('교수자 기준 코드 파일을 선택하세요.')
-        except ValueError as error:
+        except (OSError, ValueError) as error:
             self.status.setText(str(error))
             return
         metadata = dict(self.generated_metadata, expected_origin='instructor_reference')
@@ -488,7 +547,7 @@ class AICaseMaker(QWidget):
             if enabled:
                 if self.generated_metadata.get('verification_error'):
                     raise ValueError('기준 코드 검증에 실패했습니다. 수정 후 다시 검증하세요.')
-                if not verification_matches(bundle, self.generated_metadata) and not self.manual_review.isChecked():
+                if not self.verification_current(bundle) and not self.manual_review.isChecked():
                     raise ValueError('기준 코드로 검증하거나 기대값을 직접 확인하고 수동 검토를 표시하세요.')
             for field in (self.course, self.chapter, self.problem):
                 name = field.text().strip()
@@ -496,8 +555,9 @@ class AICaseMaker(QWidget):
                     raise ValueError('과목·장·문제 폴더명을 입력하세요.')
             destination = case_path(self.course.text().strip(), self.chapter.text().strip(), self.problem.text().strip())
             metadata = dict(self.generated_metadata)
-            if enabled and not verification_matches(bundle, metadata):
+            if enabled and not self.verification_current(bundle):
                 metadata['expected_origin'] = 'manually_reviewed'
+                metadata.pop('verification', None)
             existing = set(destination.glob('*/case.json')) if destination.exists() else set()
             paths = save_bundle(bundle, destination, enabled, metadata)
             reused = sum((p / 'case.json') in existing for p in paths)
