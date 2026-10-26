@@ -31,9 +31,11 @@ class ReviewWorker(QThread):
 
 
 class QualitativeWindow(QWidget):
-    def __init__(self,submissions):
+    def __init__(self,submissions,preset=None):
+        """`preset` (title, problem, rubric, summary) prefills an exam such as the midterm; the instructor can still edit."""
         super().__init__()
-        self.setWindowTitle('Qwen 정성평가')
+        self.preset = preset or {}
+        self.setWindowTitle('Qwen 정성평가'+(' · '+self.preset['title'] if self.preset.get('title') else ''))
         self.resize(1200,850)
         self.submissions = submissions
         self.rows = []
@@ -41,7 +43,7 @@ class QualitativeWindow(QWidget):
         self.worker = None
         self.archive = None
         self.decks = build_catalog()
-        self.rubric = deepcopy(DEFAULT_RUBRIC)
+        self.rubric = deepcopy(self.preset.get('rubric') or DEFAULT_RUBRIC)
         root = QVBoxLayout(self)
         server = QHBoxLayout()
         settings=QSettings('SWLAB','PracticeEvaluation')
@@ -55,7 +57,9 @@ class QualitativeWindow(QWidget):
         server.addWidget(QLabel('Qwen 서버'));server.addWidget(self.url,2)
         server.addWidget(QLabel('모델'));server.addWidget(self.model,2)
         root.addLayout(server)
-        root.addWidget(QLabel(f'선택 학생 {len(submissions)}명 · 선택 문제의 소스와 요구사항·평가기준을 위 서버에 전송합니다. 학번 매핑은 로컬에 보관합니다.'))
+        patterns=next((s['sources'] for s in submissions if s.get('sources')),None)
+        scope=f'지정 파일({", ".join(patterns)})과' if patterns else '선택 문제의 소스와'
+        root.addWidget(QLabel(f'선택 학생 {len(submissions)}명 · {scope} 요구사항·평가기준을 위 서버에 전송합니다. 학번 매핑은 로컬에 보관합니다.'))
         material=QHBoxLayout()
         self.slide_selection=None
         self.load_problem_button=QPushButton('슬라이드 목록에서 문제 선택…');self.load_problem_button.clicked.connect(self.load_problem)
@@ -71,6 +75,9 @@ class QualitativeWindow(QWidget):
         for row,rule in enumerate(self.rubric):
             for column,key in enumerate(('name','max_score','description')):
                 self.rubric_table.setItem(row,column,QTableWidgetItem(str(rule[key])))
+        if self.preset.get('problem'):
+            self.problem_text.setPlainText(self.preset['problem'])
+            self.source_summary.setText(self.preset.get('summary') or self.preset.get('title') or '')
         config.addTab(self.problem_text,'문제 요구사항');config.addTab(self.rubric_table,'평가 기준 / 배점')
         split.addWidget(config)
         panel=QWidget();layout=QVBoxLayout(panel)
@@ -131,6 +138,7 @@ class QualitativeWindow(QWidget):
         self.context={'problem':problem,'rubric':rules,'submissions':[{k:v for k,v in s.items() if k!='path'} for s in self.submissions],
                       'model':client.model,'endpoint':client.base_url,'run_state':'running'}
         self.context['slide_selection']={k:v for k,v in (self.slide_selection or {}).items() if k!='text'}
+        if self.preset.get('title'):self.context['preset']={k:self.preset[k] for k in ('title','points') if k in self.preset}
         try:save_reviews(self.archive,self.rows,self.context)
         except OSError as error:self.status.setText(f'자동 저장 실패: {error}');return
         self.progress.setRange(0,len(self.submissions));self.progress.setValue(0)

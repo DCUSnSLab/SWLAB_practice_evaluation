@@ -79,6 +79,22 @@ class QualitativeTests(unittest.TestCase):
             self.assertIsNone(rows[0]['suggested_score'])
             self.assertEqual(list(review_batch(LLMClient('https://example.invalid', 'test-model'),'problem',DEFAULT_RUBRIC,contexts,cancelled=lambda:True)),[])
 
+    def test_batch_sends_only_requested_files_per_submission(self):
+        with tempfile.TemporaryDirectory() as temp:
+            Path(temp,'copy.c').write_text('int main(){}');Path(temp,'scratch.c').write_text('int x;');Path(temp,'book.h').write_text('#pragma once')
+            contexts=[{'student':'a','path':temp,'sources':['copy.c','*.h']},{'student':'b','path':temp,'sources':['searchbook.c','*.h']},{'student':'c','path':temp}]
+            seen=[]
+            def review(client,problem,rubric,sources):
+                seen.append(sorted(sources));return {'status':'ai_proposed','suggested_score':1}
+            with patch('qualitative.review_sources',side_effect=review):
+                rows=list(review_batch(LLMClient('https://example.invalid','test-model'),'problem',DEFAULT_RUBRIC,contexts))
+            self.assertEqual(seen,[['book.h','copy.c'],['book.h','copy.c','scratch.c']])
+            self.assertEqual([r['status'] for r in rows],['ai_proposed','error','ai_proposed'])
+            self.assertIn('searchbook.c',rows[1]['message'])
+            self.assertEqual(rows[0]['sources'],['copy.c','*.h'])
+            with self.assertRaises(ValueError):collect_sources(temp,[])
+            with self.assertRaises(ValueError):collect_sources(temp,'copy.c')
+
     def test_confirmation_preserves_ai_score(self):
         result=validate_review(answer(),DEFAULT_RUBRIC,{'main.c':'line'})
         result.update(status='ai_proposed',final_score=None)

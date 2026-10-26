@@ -1,6 +1,7 @@
 """Evidence-based qualitative code review. AI proposals never become final grades implicitly."""
 from datetime import datetime, timezone
 import csv
+import fnmatch
 import hashlib
 import json
 import math
@@ -48,10 +49,13 @@ def validate_rubric(rubric):
     return rubric
 
 
-def collect_sources(folder):
+def collect_sources(folder, patterns=None):
+    """Read the submission's sources; `patterns` (file names or globs) restricts them, e.g. ['copy.c', '*.h']."""
     folder = Path(folder).resolve()
     if not folder.is_dir():
         raise ValueError('제출 폴더가 없습니다.')
+    if patterns is not None and (not isinstance(patterns,list) or not patterns or not all(isinstance(p,str) and p for p in patterns)):
+        raise ValueError('전송 파일 목록 형식 오류')
     sources = {}
     size = 0
     for path in sorted(folder.rglob('*')):
@@ -59,6 +63,8 @@ def collect_sources(folder):
         if any(part.startswith('.') or part in ('__pycache__','build','dist') for part in relative.parts):
             continue
         if path.suffix.lower() not in ('.c','.h','.py','.cpp','.hpp'):
+            continue
+        if patterns is not None and not any(fnmatch.fnmatchcase(relative.as_posix(),p) for p in patterns):
             continue
         if path.is_symlink() or not path.resolve().is_relative_to(folder):
             raise ValueError('심볼릭 링크 소스는 평가할 수 없습니다.')
@@ -68,6 +74,11 @@ def collect_sources(folder):
         if size > 120000 or len(sources) >= 40:
             raise ValueError('소스가 120KB 또는 40개 파일을 초과합니다. 문제 폴더 범위를 줄이세요.')
         sources[relative.as_posix()] = path.read_text(encoding='utf-8-sig')
+    if patterns is not None:
+        # Headers alone are not a submission: at least one explicitly named file must exist.
+        named = [p for p in patterns if not any(ch in p for ch in '*?[')]
+        if named and not any(name in sources for name in named):
+            raise ValueError('평가 대상 파일이 없습니다: ' + ', '.join(named))
     if not sources:
         raise ValueError('평가할 C/Python 소스 파일이 없습니다.')
     return sources
@@ -152,7 +163,7 @@ def review_batch(client, problem, rubric, submissions, cancelled=lambda:False):
             break
         row = {k:v for k,v in context.items() if k != 'path'}
         try:
-            sources = collect_sources(context['path'])
+            sources = collect_sources(context['path'],context.get('sources'))
             row.update(review_sources(client,problem,rubric,sources))
         except (OSError,ValueError,TypeError,KeyError,AttributeError) as error:
             row.update(status='error',message=str(error),suggested_score=None,final_score=None)
