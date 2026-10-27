@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from qualitative import (DEFAULT_RUBRIC,validate_rubric,validate_review,collect_sources,
-    review_sources,review_batch,confirm_review,save_reviews,load_reviews)
+    review_sources,review_batch,confirm_review,confirm_reviews,save_reviews,load_reviews)
 from llm_cases import LLMClient
 from qualitative_rubric import resource_scope
 
@@ -114,13 +114,55 @@ class QualitativeTests(unittest.TestCase):
             loaded=json.loads(path.read_text(encoding='utf-8'))
             self.assertEqual(loaded['context']['problem'],'copy')
             self.assertEqual(len(loaded['results'][0]['criteria']),7)
-            path=Path(temp,'review.csv');save_reviews(path,[row],{})
+            path=Path(temp,'review.csv');save_reviews(path,[row],{},csv_detail=True)
             with path.open(encoding='utf-8-sig') as stream:records=list(csv.DictReader(stream))
             self.assertEqual(len(records),7)
             self.assertEqual(records[-1]['criterion_score'],'')
             self.assertEqual(records[-1]['applicable'],'False')
             self.assertEqual(records[0]['summary'],"'=SUM(A1)")
             self.assertEqual(records[0]['final_score'],'')
+
+    def test_summary_csv_has_one_row_per_student_including_failures(self):
+        row=validate_review(answer(),DEFAULT_RUBRIC,{'main.c':'line'})
+        row.update(student='101',status='ai_proposed',final_score=None,summary='=SUM(A1)\n여러 줄 총평',reviewer_note='')
+        confirmed=deepcopy(row);confirmed['student']='102';confirm_review(confirmed,80,'검토\n완료')
+        error=dict(student='103',status='error',message='파일 없음\n확인 필요',suggested_score=None,final_score=None)
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp,'summary.csv');save_reviews(path,[row,confirmed,error],{})
+            with path.open(encoding='utf-8-sig',newline='') as stream:records=list(csv.DictReader(stream))
+            self.assertEqual(len(records),3)
+            self.assertEqual(len(path.read_text(encoding='utf-8-sig').splitlines()),4)
+            self.assertEqual([r['student'] for r in records],['101','102','103'])
+            self.assertEqual([r['final_score'] for r in records],['','80',''])
+            self.assertEqual(records[0]['correctness_score'],'5')
+            self.assertEqual(records[0]['resource_files_score'],'')
+            self.assertEqual(records[0]['resource_files_applicable'],'False')
+            self.assertEqual(records[2]['correctness_score'],'')
+            self.assertEqual(records[0]['summary'],"'=SUM(A1) 여러 줄 총평")
+            self.assertEqual(records[2]['message'],'파일 없음 확인 필요')
+            self.assertEqual(row['summary'],'=SUM(A1)\n여러 줄 총평')
+
+    def test_batch_confirmation_keeps_each_proposal_and_existing_decisions(self):
+        first=validate_review(answer(),DEFAULT_RUBRIC,{'main.c':'line'})
+        first.update(status='ai_proposed',final_score=None)
+        second=deepcopy(first);second['suggested_score']=40
+        existing=deepcopy(first);confirm_review(existing,75,'기존 조정')
+        error=dict(status='error',suggested_score=None,final_score=None)
+        before=deepcopy([existing,error])
+        self.assertEqual(confirm_reviews([first,second,existing,error],'일괄 검토'),2)
+        self.assertEqual([first['final_score'],second['final_score']],[50,40])
+        self.assertEqual([existing,error],before)
+        self.assertEqual(confirm_reviews([first,second,existing,error],'재승인'),0)
+        self.assertEqual(first['reviewer_note'],'일괄 검토')
+
+    def test_batch_confirmation_validates_every_target_before_mutation(self):
+        first=dict(status='ai_proposed',suggested_score=5,max_score=10,final_score=None)
+        bad=dict(status='ai_proposed',suggested_score=99,max_score=10,final_score=None)
+        original=deepcopy([first,bad])
+        with self.assertRaises(ValueError):confirm_reviews([first,bad],'검토')
+        self.assertEqual([first,bad],original)
+        with self.assertRaises(ValueError):confirm_reviews([first],' ')
+        self.assertEqual(first,original[0])
 
     def test_saved_report_validation(self):
         row=validate_review(answer(),DEFAULT_RUBRIC,{'main.c':'line'})

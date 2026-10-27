@@ -4,16 +4,16 @@ from datetime import datetime
 import json
 from pathlib import Path
 import uuid
-from PyQt6.QtCore import QThread, pyqtSignal, QSettings, Qt
+from PyQt6.QtCore import QThread, pyqtSignal, QSettings, Qt, QSignalBlocker, QItemSelectionModel
 from PyQt6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QPushButton,
     QPlainTextEdit,QComboBox,QSpinBox,QDoubleSpinBox,QTableWidget,QTableWidgetItem,
-    QHeaderView,QTabWidget,QFileDialog,QSplitter,QProgressBar,QAbstractItemView,QDialog)
+    QHeaderView,QTabWidget,QFileDialog,QSplitter,QProgressBar,QAbstractItemView,QDialog,QTableWidgetSelectionRange)
 from llm_cases import LLMClient
 from llm_config import llm_settings
 from materials import build_catalog
 from slide_picker import SlidePicker
 from paths import ROOT
-from qualitative import DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,save_reviews,load_reviews
+from qualitative import DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,confirm_reviews,save_reviews,load_reviews
 from qualitative_rubric import (SCORING_VERSION, RESOURCE_IDS, resource_scope,
     validate_dcucode_rubric)
 
@@ -112,17 +112,29 @@ class QualitativeWindow(QWidget):
         self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['학생','상태','종합 품질 / 100','제안 부분점수','교수자 확정'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.itemSelectionChanged.connect(self.show_selected)
+        self.table.itemSelectionChanged.connect(self.selection_changed)
+        selection=QHBoxLayout()
+        self.select_all_button=QPushButton('전체 선택');self.select_all_button.clicked.connect(self.table.selectAll)
+        self.clear_selection_button=QPushButton('선택 해제');self.clear_selection_button.clicked.connect(self.table.clearSelection)
+        selection.addWidget(self.select_all_button);selection.addWidget(self.clear_selection_button)
+        self.selection_info=QLabel();selection.addWidget(self.selection_info,1);layout.addLayout(selection)
         layout.addWidget(self.table,1)
         self.detail=QPlainTextEdit();self.detail.setReadOnly(True);layout.addWidget(self.detail,2)
         final=QHBoxLayout();self.final_score=QDoubleSpinBox();self.final_score.setDecimals(2)
         final.addWidget(QLabel('교수자 확정 점수'));final.addWidget(self.final_score)
-        self.confirm_button=QPushButton('검토 후 확정');self.confirm_button.clicked.connect(self.confirm)
+        self.confirm_button=QPushButton('현재 학생 점수 확정');self.confirm_button.clicked.connect(self.confirm)
         final.addWidget(self.confirm_button);layout.addLayout(final)
         self.note=QPlainTextEdit();self.note.setPlaceholderText('점수 유지 또는 조정에 대한 교수자 검토 의견');self.note.setMaximumHeight(75)
         layout.addWidget(self.note)
+        batch=QHBoxLayout()
+        self.batch_note=QLineEdit('교수자 일괄 승인: AI 제안 점수 유지')
+        self.batch_note.setToolTip('일괄 승인 대상 학생 모두에게 저장할 검토 의견')
+        self.batch_confirm_button=QPushButton('선택 학생 일괄 승인 (0명)')
+        self.batch_confirm_button.setToolTip('선택한 미확정 학생의 AI 제안 점수를 각각 확정합니다. 이미 확정한 점수와 평가 실패는 건너뜁니다.')
+        self.batch_confirm_button.clicked.connect(self.confirm_selected)
+        batch.addWidget(self.batch_note,1);batch.addWidget(self.batch_confirm_button);layout.addLayout(batch)
         split.addWidget(panel);split.setSizes([430,770]);root.addWidget(split,1)
         actions=QHBoxLayout()
         self.start_button=QPushButton('선택 학생 일괄 정성평가');self.start_button.clicked.connect(self.start)
@@ -136,9 +148,32 @@ class QualitativeWindow(QWidget):
 
     def set_busy(self,busy):
         for widget in (self.start_button,self.problem_text,self.rubric_table,self.load_problem_button,self.url,self.model,self.open_button,self.note,self.final_score,
-                       self.problem_points,self.reset_rubric_button,*self.resource_modes.values()):widget.setEnabled(not busy)
+                       self.problem_points,self.reset_rubric_button,self.batch_note,self.select_all_button,self.clear_selection_button,
+                       *self.resource_modes.values()):widget.setEnabled(not busy)
         self.cancel_button.setEnabled(busy)
-        self.confirm_button.setEnabled(not busy and bool(self.rows))
+        self.update_approval_controls(busy)
+
+    def selected_indices(self):
+        return sorted(index.row() for index in self.table.selectionModel().selectedRows() if index.row()<len(self.rows))
+
+    def update_approval_controls(self,busy=None):
+        if busy is None:busy=bool(self.worker and self.worker.isRunning())
+        indices=self.selected_indices()
+        pending=sum(self.rows[i]['status']=='ai_proposed' for i in indices)
+        self.selection_info.setText(f'전체 {len(self.rows)}명 · 선택 {len(indices)}명 · 미확정 {pending}명')
+        self.batch_confirm_button.setText(f'선택 학생 일괄 승인 ({pending}명)')
+        self.batch_confirm_button.setEnabled(not busy and pending>0)
+        current=self.table.currentRow()
+        self.confirm_button.setEnabled(not busy and current in indices and self.rows[current]['status'] in ('ai_proposed','confirmed'))
+
+    def selection_changed(self):
+        indices=self.selected_indices()
+        if indices:
+            if self.table.currentRow() not in indices:
+                self.table.setCurrentCell(indices[0],0,QItemSelectionModel.SelectionFlag.NoUpdate)
+            self.show_selected()
+        else:self.detail.clear()
+        self.update_approval_controls()
 
     def populate_rubric(self):
         self.rubric_table.setRowCount(len(self.rubric))
@@ -208,16 +243,21 @@ class QualitativeWindow(QWidget):
         self.persist()
 
     def refresh_rows(self):
-        selected=self.table.currentRow()
-        self.table.setRowCount(len(self.rows))
+        selected=self.selected_indices();current=self.table.currentRow();old_count=self.table.rowCount()
         labels={'ai_proposed':'AI 제안','confirmed':'교수자 확정','error':'평가 실패'}
-        for i,row in enumerate(self.rows):
-            for column,value in enumerate([row.get('student',''),labels.get(row['status'],row['status']),
+        with QSignalBlocker(self.table):
+            self.table.setRowCount(len(self.rows))
+            for i,row in enumerate(self.rows):
+                for column,value in enumerate([row.get('student',''),labels.get(row['status'],row['status']),
                     '' if row.get('overall') is None else f"{row['overall']}/100",
                     '' if row.get('suggested_score') is None else f"{row['suggested_score']}/{row['max_score']}",row.get('final_score')]):
-                self.table.setItem(i,column,QTableWidgetItem('' if value is None else str(value)))
-        if selected>=0:self.table.selectRow(selected)
-        elif self.rows:self.table.selectRow(0)
+                    self.table.setItem(i,column,QTableWidgetItem('' if value is None else str(value)))
+            self.table.clearSelection()
+            if old_count==0 and self.rows:selected=[0]
+            for i in selected:
+                self.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,self.table.columnCount()-1),True)
+            if self.rows:self.table.setCurrentCell(current if 0<=current<len(self.rows) else 0,0,QItemSelectionModel.SelectionFlag.NoUpdate)
+        self.selection_changed()
 
     def persist(self):
         try:
@@ -257,17 +297,28 @@ class QualitativeWindow(QWidget):
         self.confirm_button.setEnabled(not (self.worker and self.worker.isRunning()))
 
     def confirm(self):
+        if self.worker and self.worker.isRunning():return
         index=self.table.currentRow()
-        if not 0<=index<len(self.rows):return
+        if index not in self.selected_indices():return
         try:confirm_review(self.rows[index],self.final_score.value(),self.note.toPlainText())
         except ValueError as error:self.status.setText(str(error));return
         self.refresh_rows();self.persist()
 
+    def confirm_selected(self):
+        if self.worker and self.worker.isRunning():return
+        selected=[self.rows[i] for i in self.selected_indices()]
+        try:count=confirm_reviews(selected,self.batch_note.text())
+        except ValueError as error:self.status.setText(str(error));return
+        if not count:self.status.setText('선택한 학생 중 승인할 AI 제안이 없습니다.');return
+        self.refresh_rows();self.persist()
+        self.status.setText(f'{count}명 일괄 승인 완료 · 기존 확정·평가 실패 {len(selected)-count}명 제외 · {self.status.text()}')
+
     def export(self):
         if not self.rows:self.status.setText('저장할 평가 결과가 없습니다.');return
-        path,_=QFileDialog.getSaveFileName(self,'정성평가 저장','qualitative.csv','CSV (*.csv);;JSON (*.json)')
+        path,kind=QFileDialog.getSaveFileName(self,'정성평가 저장','qualitative.csv',
+            '학생별 요약 CSV (*.csv);;항목별 상세 CSV (*.csv);;JSON (*.json)')
         if path:
-            try:save_reviews(path,self.rows,self.context);self.status.setText('저장 완료: '+path)
+            try:save_reviews(path,self.rows,self.context,csv_detail=kind.startswith('항목별 상세'));self.status.setText('저장 완료: '+path)
             except OSError as error:self.status.setText('저장 실패: '+str(error))
 
     def open_report(self):

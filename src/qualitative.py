@@ -1,5 +1,6 @@
 """Evidence-based qualitative code review. AI proposals never become final grades implicitly."""
 from datetime import datetime, timezone
+from copy import deepcopy
 import csv
 import fnmatch
 import hashlib
@@ -205,7 +206,21 @@ def confirm_review(row, score, note):
                reviewed_at=datetime.now(timezone.utc).isoformat())
 
 
-def save_reviews(path, rows, context):
+def confirm_reviews(rows, note):
+    """Confirm pending proposals at their own suggested scores; preserve existing decisions."""
+    prepared = []
+    for row in rows:
+        if row.get('status') != 'ai_proposed':
+            continue
+        approved = deepcopy(row)
+        confirm_review(approved, approved['suggested_score'], note)
+        prepared.append((row, approved))
+    for row, approved in prepared:
+        row.update(approved)
+    return len(prepared)
+
+
+def save_reviews(path, rows, context, *, csv_detail=False):
     path = Path(path)
     path.parent.mkdir(parents=True,exist_ok=True)
     temporary = path.with_name(path.name+'.tmp')
@@ -213,18 +228,35 @@ def save_reviews(path, rows, context):
         with temporary.open('w',encoding='utf-8-sig',newline='') as stream:
             fields = ['class_name','student','chapter','problem','status','suggested_score','max_score','final_score',
                       'overall','resource_score','overall_denominator','partial_denominator','scoring_version',
-                      'criterion','criterion_score','criterion_max','applicable','assessment','suggestion','reason','evidence','summary','strengths','improvements',
-                      'uncertainties','reviewer_note','model','created_at','reviewed_at','message']
+                      'summary','reviewer_note','model','created_at','reviewed_at','message']
+            criterion_ids = list(dict.fromkeys(c['id'] for row in rows for c in row.get('criteria',[])))
+            if csv_detail:
+                fields += ['criterion','criterion_score','criterion_max','applicable','assessment','suggestion','reason','evidence',
+                           'strengths','improvements','uncertainties']
+            else:
+                fields += [f'{cid}_{key}' for cid in criterion_ids for key in ('score','applicable')]
             writer = csv.DictWriter(stream,fieldnames=fields,extrasaction='ignore');writer.writeheader()
             for row in rows:
-                for criterion in row.get('criteria') or [{}]:
-                    flat = dict(row,criterion=criterion.get('name'),criterion_score=criterion.get('score'),
+                records = []
+                if csv_detail:
+                    for criterion in row.get('criteria') or [{}]:
+                        flat = dict(row,criterion=criterion.get('name'),criterion_score=criterion.get('score'),
                                 criterion_max=criterion.get('max_score'),reason=criterion.get('reason'),
                                 applicable=criterion.get('applicable',True), assessment=criterion.get('assessment',''),
                                 suggestion=criterion.get('suggestion',''),
                                 evidence=json.dumps(criterion.get('evidence',[]),ensure_ascii=False))
-                    for key in ('strengths','improvements','uncertainties'):
-                        flat[key] = '\n'.join(row.get(key,[]))
+                        for key in ('strengths','improvements','uncertainties'):
+                            flat[key] = '\n'.join(row.get(key,[]))
+                        records.append(flat)
+                else:
+                    flat = dict(row)
+                    for criterion in row.get('criteria',[]):
+                        flat[f"{criterion['id']}_score"] = criterion.get('score')
+                        flat[f"{criterion['id']}_applicable"] = criterion.get('applicable',True)
+                    # One physical row as well as one CSV record per student, even with multiline feedback.
+                    flat = {k:(' '.join(v.split()) if isinstance(v,str) else v) for k,v in flat.items()}
+                    records.append(flat)
+                for flat in records:
                     writer.writerow({k:("'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\t','\r')) else v) for k,v in flat.items()})
     else:
         version = 2 if context.get('scoring_version') == SCORING_VERSION or any(r.get('scoring_version') == SCORING_VERSION for r in rows) else 1

@@ -347,7 +347,7 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(len(window.rows),1)
             self.assertTrue(window.archive.is_file())
             self.assertIsNone(load_reviews(window.archive)['results'][0]['final_score'])
-            window.table.selectRow(0);self.app.processEvents()
+            self.assertEqual(window.selected_indices(),[0]);self.app.processEvents()
             window.final_score.setValue(75);window.note.setPlainText('검토 완료 후 조정');window.confirm()
             saved=load_reviews(window.archive)['results'][0]
             self.assertEqual(saved['suggested_score'],50)
@@ -398,6 +398,62 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(reopened.rows[0],row)
             self.assertEqual(reopened.table.item(0,3).text(),'50/75')
             reopened.close();window.close()
+
+    def test_qualitative_batch_approval_selection_and_csv_modes(self):
+        import csv
+        from copy import deepcopy
+        from qualitative_gui import QualitativeWindow
+        from qualitative import DEFAULT_RUBRIC,validate_review,confirm_review,load_reviews
+        from PyQt6.QtWidgets import QTableWidgetSelectionRange
+        raw={'summary':'총평\n두 번째 줄','strengths':[],'improvements':[],'uncertainties':[],
+             'criteria':[{'id':r['id'],'score':5,'assessment':'근거','suggestion':'개선 의견','evidence':[]}
+                         for r in DEFAULT_RUBRIC]}
+        first=validate_review(raw,DEFAULT_RUBRIC,{'main.c':'line'})
+        first.update(student='101',status='ai_proposed',final_score=None,reviewer_note='')
+        for item in raw['criteria']:item['score']=8
+        second=validate_review(raw,DEFAULT_RUBRIC,{'main.c':'line'})
+        second.update(student='102',status='ai_proposed',final_score=None,reviewer_note='')
+        existing=deepcopy(first);existing['student']='103';confirm_review(existing,75,'개별 조정 유지')
+        error=dict(student='104',status='error',suggested_score=None,final_score=None,message='평가 실패')
+        with tempfile.TemporaryDirectory() as temp:
+            window=QualitativeWindow([])
+            self.addCleanup(window.close)
+            window.archive=Path(temp,'review.json');window.rows=[first,second,existing,error]
+            window.refresh_rows()
+            window.clear_selection_button.click()
+            self.assertFalse(window.batch_confirm_button.isEnabled())
+            self.assertFalse(window.confirm_button.isEnabled())
+            for i in (0,2):window.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,4),True)
+            self.assertIn('(1명)',window.batch_confirm_button.text())
+            window.batch_note.setText('선택 학생 검토')
+            window.batch_confirm_button.click()
+            self.assertEqual(window.selected_indices(),[0,2])
+            self.assertEqual(first['final_score'],50)
+            self.assertIsNone(second['final_score'])
+            self.assertEqual(existing['final_score'],75)
+            self.assertEqual(existing['reviewer_note'],'개별 조정 유지')
+            window.select_all_button.click()
+            self.assertEqual(window.selected_indices(),[0,1,2,3])
+            window.set_busy(True)
+            self.assertFalse(window.batch_confirm_button.isEnabled())
+            window.batch_confirm_button.click();self.assertIsNone(second['final_score'])
+            window.set_busy(False)
+            window.batch_note.clear();window.batch_confirm_button.click()
+            self.assertIsNone(second['final_score'])
+            window.batch_note.setText('나머지 일괄 승인');window.batch_confirm_button.click()
+            self.assertEqual(second['final_score'],80)
+            self.assertEqual(second['reviewer_note'],'나머지 일괄 승인')
+            self.assertEqual(error['status'],'error')
+            self.assertFalse(window.batch_confirm_button.isEnabled())
+            self.assertEqual(load_reviews(window.archive)['results'],window.rows)
+            for mode,count in [('학생별 요약 CSV (*.csv)',4),('항목별 상세 CSV (*.csv)',22)]:
+                path=Path(temp,'export.csv')
+                with patch('qualitative_gui.QFileDialog.getSaveFileName',return_value=(str(path),mode)):
+                    window.export_button.click()
+                with path.open(encoding='utf-8-sig',newline='') as stream:records=list(csv.DictReader(stream))
+                self.assertEqual(len(records),count)
+                if count==4:
+                    self.assertEqual([r['final_score'] for r in records],['50','80','75',''])
 
     def test_import_failure_still_completes(self):
         worker = LoadWorker()
