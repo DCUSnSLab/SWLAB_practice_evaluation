@@ -330,7 +330,7 @@ class GuiTests(unittest.TestCase):
         from qualitative_gui import QualitativeWindow
         from qualitative import DEFAULT_RUBRIC,validate_review,load_reviews
         raw={'summary':'총평','strengths':[],'improvements':[],'uncertainties':[],
-             'criteria':[{'id':r['id'],'score':r['max_score']/2,'reason':'근거',
+             'criteria':[{'id':r['id'],'score':5,'assessment':'근거','suggestion':'실패 처리 보완',
                           'evidence':[{'file':'main.c','line':1}]} for r in DEFAULT_RUBRIC]}
         result=validate_review(raw,DEFAULT_RUBRIC,{'main.c':'int main(){}'})
         result.update(status='ai_proposed',final_score=None,reviewer_note='')
@@ -354,6 +354,50 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(saved['final_score'],75)
             self.assertEqual(saved['status'],'confirmed')
             window.close()
+
+    def test_qualitative_resource_controls_partial_points_and_report_restore(self):
+        import json
+        from qualitative_gui import QualitativeWindow
+        from qualitative import DEFAULT_RUBRIC, load_reviews
+        raw={'summary':'자원 검토','strengths':[],'improvements':[],'uncertainties':[],
+             'criteria':[{'id':r['id'],'score':0 if r['id']=='resource_files' else 10,
+                          'assessment':'코드 확인','suggestion':'닫기 실패 경로를 확인하세요.',
+                          'evidence':[{'file':'main.c','line':1}]} for r in DEFAULT_RUBRIC]}
+        payload={'choices':[{'message':{'content':json.dumps(raw)},'finish_reason':'stop'}]}
+        with tempfile.TemporaryDirectory() as temp, patch('qualitative_gui.ROOT',Path(temp)):
+            Path(temp,'main.c').write_text('int main(){return 0;}')
+            window=QualitativeWindow([{'student':'demo','path':temp}])
+            window.problem_text.setPlainText('파일을 복사한다.')
+            window.problem_points.setValue(75)
+            window.resource_modes['memory'].setCurrentIndex(2)  # Explicit exclude is persisted.
+            self.assertIn('파일: 평가',window.resource_info.text())
+            with patch('llm_cases.LLMClient._request',return_value=payload) as request:
+                window.start()
+                self.assertFalse(window.problem_points.isEnabled())
+                self.assertFalse(window.resource_modes['files'].isEnabled())
+                deadline=time.monotonic()+5
+                while window.worker.isRunning() and time.monotonic()<deadline:
+                    self.app.processEvents();time.sleep(.01)
+                self.app.processEvents()
+            sent=json.loads(request.call_args.args[1]['messages'][1]['content'])
+            self.assertTrue(sent['resource_scope']['files']['applicable'])
+            self.assertEqual(sent['problem_points'],75)
+            row=load_reviews(window.archive)['results'][0]
+            self.assertEqual(row['suggested_score'],50)
+            self.assertEqual(row['overall'],80)
+            self.assertEqual(window.table.item(0,2).text(),'80/100')
+            self.assertEqual(window.table.item(0,3).text(),'50/75')
+            self.assertIn('제외 (계산에 반영하지 않음)',window.detail.toPlainText())
+            self.assertEqual(window.final_score.value(),50)
+            self.assertTrue(window.problem_points.isEnabled())
+            reopened=QualitativeWindow([])
+            with patch('qualitative_gui.QFileDialog.getOpenFileName',return_value=(str(window.archive),'')):
+                reopened.open_report()
+            self.assertEqual(reopened.problem_points.value(),75)
+            self.assertEqual(reopened.resource_modes['memory'].currentData(),'exclude')
+            self.assertEqual(reopened.rows[0],row)
+            self.assertEqual(reopened.table.item(0,3).text(),'50/75')
+            reopened.close();window.close()
 
     def test_import_failure_still_completes(self):
         worker = LoadWorker()

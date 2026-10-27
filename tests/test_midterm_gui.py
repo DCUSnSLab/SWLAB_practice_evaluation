@@ -172,6 +172,49 @@ class MidtermGuiTests(unittest.TestCase):
             self.assertTrue(warning.called)
             grade.assert_not_called()
 
+    def test_qualitative_review_gets_exam_statement_file_scope_and_points(self):
+        w = self.window
+        w.listStudents.clearSelection()
+        for index in range(w.listStudents.count()):
+            w.listStudents.item(index).setSelected(True)
+        w.comboProblem.setCurrentIndex(w.comboProblem.findData('copy.c'))
+        with patch('qualitative_gui.QualitativeWindow') as window:
+            window.return_value.isVisible.return_value = False
+            w.openQualitative()
+        submissions, preset = window.call_args.args
+        self.assertEqual([s['student'] for s in submissions], ['101', '102'])
+        self.assertEqual(Path(submissions[0]['path']).name, 'midterm')
+        self.assertEqual(submissions[0]['problem'], 'copy.c')
+        self.assertEqual(submissions[0]['sources'], ['copy.c', '*.h'])
+        self.assertIn('옵션은 명령어의 인자값으로 전달', preset['problem'])
+        self.assertEqual([r['max_score'] for r in preset['rubric']], [10] * 7)
+        w.comboProblem.setCurrentIndex(w.comboProblem.findData(ALL_TARGETS))
+        with patch('qualitative_gui.QualitativeWindow') as window:
+            window.return_value.isVisible.return_value = False
+            w.openQualitative()
+        submissions, preset = window.call_args.args
+        self.assertEqual(submissions[0]['problem'], ALL_TARGETS)
+        self.assertEqual(preset['points'], 75)
+        self.assertEqual(len(submissions[0]['sources']), 8)
+        # DCUCode axes keep their scale; problem points are separate.
+        from qualitative_gui import QualitativeWindow
+        real = QualitativeWindow(submissions, preset)
+        try:
+            self.assertIn('중간고사', real.windowTitle())
+            self.assertIn('sortedbookcreate.c', real.problem_text.toPlainText())
+            self.assertEqual(real.rubric_table.rowCount(), 7)
+            self.assertEqual([r['max_score'] for r in real.read_rubric()], [10] * 7)
+            self.assertEqual(real.problem_points.value(), 75)
+            self.assertIn('75점', real.source_summary.text())
+        finally:
+            real.close()
+        w.comboChapter.setCurrentText('chap1')
+        with patch('qualitative_gui.QualitativeWindow') as window:
+            w.openQualitative()
+        submissions, preset = window.call_args.args
+        self.assertIsNone(preset)
+        self.assertNotIn('sources', submissions[0])
+
     @unittest.skipUnless(os.environ.get('SWLAB_TEST_DOCKER') == '1', 'Set SWLAB_TEST_DOCKER=1')
     def test_docker_gui_grades_all_36_cases_from_flat_midterm(self):
         w = self.window

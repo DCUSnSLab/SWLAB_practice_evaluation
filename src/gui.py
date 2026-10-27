@@ -934,9 +934,21 @@ class Gui(QMainWindow):
         if not chapter or chapter == '(No Files)':
             QMessageBox.information(self, '정성평가', '평가할 장과 문제를 선택하세요.')
             return
-        submissions = [dict(class_name=class_name, student=item.text(), chapter=chapter, problem=problem,
-                       path=str(safe_path(ORIGIN, class_name, item.text(), chapter, problem))) for item in selected]
-        self.qualitative_window = QualitativeWindow(submissions)
+        preset = None
+        extra = {}
+        if self.isMidterm():
+            # Exam files share one midterm/ folder: send only the selected problem's file(s) with the paper's statement.
+            from midterm_qualitative import qualitative_preset
+            try:
+                preset = qualitative_preset(self.selectedProblem())
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                QMessageBox.warning(self, '정성평가', f'중간고사 문제 정보를 읽지 못했습니다: {exc}')
+                return
+            extra = dict(problem=self.selectedProblem(), sources=preset['sources'])
+        submissions = [{**dict(class_name=class_name, student=item.text(), chapter=chapter, problem=problem,
+                               path=str(safe_path(ORIGIN, class_name, item.text(), chapter, problem))), **extra}
+                       for item in selected]
+        self.qualitative_window = QualitativeWindow(submissions, preset)
         self.qualitative_window.show()
 
     def openAIMaker(self):

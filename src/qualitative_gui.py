@@ -4,7 +4,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import uuid
-from PyQt6.QtCore import QThread, pyqtSignal, QSettings
+from PyQt6.QtCore import QThread, pyqtSignal, QSettings, Qt
 from PyQt6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QPushButton,
     QPlainTextEdit,QComboBox,QSpinBox,QDoubleSpinBox,QTableWidget,QTableWidgetItem,
     QHeaderView,QTabWidget,QFileDialog,QSplitter,QProgressBar,QAbstractItemView,QDialog)
@@ -14,17 +14,20 @@ from materials import build_catalog
 from slide_picker import SlidePicker
 from paths import ROOT
 from qualitative import DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,save_reviews,load_reviews
+from qualitative_rubric import (SCORING_VERSION, RESOURCE_IDS, resource_scope,
+    validate_dcucode_rubric)
 
 
 class ReviewWorker(QThread):
     row_ready = pyqtSignal(object)
     failed = pyqtSignal(str)
-    def __init__(self,client,problem,rubric,submissions,parent=None):
+    def __init__(self,client,problem,rubric,submissions,parent=None,options=None):
         super().__init__(parent)
         self.arguments = client,problem,rubric,submissions
+        self.options = options or {}
     def run(self):
         try:
-            for row in review_batch(*self.arguments,cancelled=self.isInterruptionRequested):
+            for row in review_batch(*self.arguments,cancelled=self.isInterruptionRequested,**self.options):
                 self.row_ready.emit(row)
         except Exception as error:
             self.failed.emit(str(error))
@@ -72,16 +75,41 @@ class QualitativeWindow(QWidget):
         self.rubric_table=QTableWidget(len(self.rubric),3)
         self.rubric_table.setHorizontalHeaderLabels(['평가 항목','배점','판정 기준'])
         self.rubric_table.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeMode.Stretch)
-        for row,rule in enumerate(self.rubric):
-            for column,key in enumerate(('name','max_score','description')):
-                self.rubric_table.setItem(row,column,QTableWidgetItem(str(rule[key])))
+        self.populate_rubric()
         if self.preset.get('problem'):
             self.problem_text.setPlainText(self.preset['problem'])
             self.source_summary.setText(self.preset.get('summary') or self.preset.get('title') or '')
         config.addTab(self.problem_text,'문제 요구사항');config.addTab(self.rubric_table,'평가 기준 / 배점')
+        resource_panel=QWidget();resource_layout=QVBoxLayout(resource_panel)
+        points_layout=QHBoxLayout();points_layout.addWidget(QLabel('문제 배점 (제안 부분점수 만점)'))
+        self.problem_points=QSpinBox();self.problem_points.setRange(1,10000)
+        self.problem_points.setValue(int(self.preset.get('points',100)))
+        points_layout.addWidget(self.problem_points);points_layout.addStretch();resource_layout.addLayout(points_layout)
+        self.resource_modes={}
+        for kind,label in [('files','파일 열기·닫기'),('memory','동적 메모리 할당·해제'),('processes','프로세스 생성·종료·자식 회수')]:
+            line=QHBoxLayout();line.addWidget(QLabel(label))
+            combo=QComboBox()
+            for text,value in [('자동 (문제 요구·실제 사용 기준)','auto'),('평가에 포함','include'),('평가에서 제외','exclude')]:
+                combo.addItem(text,value)
+            combo.currentIndexChanged.connect(self.refresh_resource_info)
+            self.resource_modes[kind]=combo;line.addWidget(combo);resource_layout.addLayout(line)
+        self.resource_info=QLabel();self.resource_info.setWordWrap(True);resource_layout.addWidget(self.resource_info)
+        formula=QLabel('DCUCode 기본 4축은 각각 0–10점입니다.\n'
+            '자원 관리는 적용되는 문항만 평균 내어 0–10점으로 환산합니다.\n'
+            '종합 품질: 기본 4축 + 자원 관리(적용 시)를 100점으로 환산.\n'
+            '시험 제안 부분점수: 문제 배점 × (정확성 + 문제 이해도 + 적용 자원 관리) ÷ (20 또는 30).\n'
+            '제외 문항은 0점이나 만점으로 처리하지 않고 계산에서 뺍니다.\n'
+            '필요한 자원을 학생이 구현하지 않은 경우에는 제외하지 않습니다.')
+        formula.setWordWrap(True);resource_layout.addWidget(formula)
+        self.reset_rubric_button=QPushButton('DCUCode 기준으로 복원')
+        self.reset_rubric_button.clicked.connect(self.reset_rubric);resource_layout.addWidget(self.reset_rubric_button)
+        resource_layout.addStretch();config.addTab(resource_panel,'문제 배점 / 자원 적용')
+        self.problem_text.textChanged.connect(self.refresh_resource_info)
+        self.problem_points.valueChanged.connect(self.refresh_resource_info)
+        self.refresh_resource_info()
         split.addWidget(config)
         panel=QWidget();layout=QVBoxLayout(panel)
-        self.table=QTableWidget(0,4);self.table.setHorizontalHeaderLabels(['학생','상태','AI 제안','교수자 확정'])
+        self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['학생','상태','종합 품질 / 100','제안 부분점수','교수자 확정'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -107,9 +135,31 @@ class QualitativeWindow(QWidget):
         self.set_busy(False)
 
     def set_busy(self,busy):
-        for widget in (self.start_button,self.problem_text,self.rubric_table,self.load_problem_button,self.url,self.model,self.open_button,self.note,self.final_score):widget.setEnabled(not busy)
+        for widget in (self.start_button,self.problem_text,self.rubric_table,self.load_problem_button,self.url,self.model,self.open_button,self.note,self.final_score,
+                       self.problem_points,self.reset_rubric_button,*self.resource_modes.values()):widget.setEnabled(not busy)
         self.cancel_button.setEnabled(busy)
         self.confirm_button.setEnabled(not busy and bool(self.rows))
+
+    def populate_rubric(self):
+        self.rubric_table.setRowCount(len(self.rubric))
+        for row,rule in enumerate(self.rubric):
+            for column,key in enumerate(('name','max_score','description')):
+                item=QTableWidgetItem(str(rule[key]))
+                if column == 1:item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.rubric_table.setItem(row,column,item)
+
+    def reset_rubric(self):
+        self.rubric=deepcopy(DEFAULT_RUBRIC);self.populate_rubric()
+
+    def resource_policy(self):
+        return {kind:combo.currentData() for kind,combo in self.resource_modes.items()}
+
+    def refresh_resource_info(self):
+        if not hasattr(self,'resource_info'):return
+        scope=resource_scope(self.problem_text.toPlainText(),{},self.resource_policy())
+        labels={'files':'파일','memory':'동적 메모리','processes':'프로세스'}
+        text=' / '.join(f'{labels[k]}: {"평가" if v["applicable"] else "제외"}' for k,v in scope.items())
+        self.resource_info.setText(f'문제 기준 예상: {text}\n자동 모드는 제출 코드에서 실제로 사용한 자원도 평가합니다. 명시적으로 포함/제외를 선택해 보정할 수 있습니다.')
 
     def load_problem(self):
         target=self.submissions[0] if self.submissions else {}
@@ -128,6 +178,7 @@ class QualitativeWindow(QWidget):
     def start(self):
         try:
             rules=self.read_rubric();problem=self.problem_text.toPlainText()
+            validate_dcucode_rubric(rules)
             if not problem.strip() or len(problem)>30000:raise ValueError('문제 요구사항을 1–30,000자로 입력하세요.')
             if not self.submissions:raise ValueError('메인 화면에서 평가할 학생을 선택하세요.')
             client=LLMClient(self.url.text().strip(),self.model.text().strip())
@@ -136,13 +187,16 @@ class QualitativeWindow(QWidget):
         self.rows=[];self.table.setRowCount(0);self.detail.clear();self.note.clear()
         self.archive=ROOT/'reports'/f'qualitative_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:6]}.json'
         self.context={'problem':problem,'rubric':rules,'submissions':[{k:v for k,v in s.items() if k!='path'} for s in self.submissions],
-                      'model':client.model,'endpoint':client.base_url,'run_state':'running'}
+                      'model':client.model,'endpoint':client.base_url,'run_state':'running',
+                      'scoring_version':SCORING_VERSION,'problem_points':self.problem_points.value(),
+                      'resource_policy':self.resource_policy()}
         self.context['slide_selection']={k:v for k,v in (self.slide_selection or {}).items() if k!='text'}
         if self.preset.get('title'):self.context['preset']={k:self.preset[k] for k in ('title','points') if k in self.preset}
         try:save_reviews(self.archive,self.rows,self.context)
         except OSError as error:self.status.setText(f'자동 저장 실패: {error}');return
         self.progress.setRange(0,len(self.submissions));self.progress.setValue(0)
-        self.worker=ReviewWorker(client,problem,rules,self.submissions,self)
+        self.worker=ReviewWorker(client,problem,rules,self.submissions,self,
+            options=dict(total_score=self.problem_points.value(),resource_policy=self.resource_policy()))
         self.worker.row_ready.connect(self.add_row)
         self.worker.failed.connect(self.worker_error)
         self.worker.finished.connect(self.finished)
@@ -159,6 +213,7 @@ class QualitativeWindow(QWidget):
         labels={'ai_proposed':'AI 제안','confirmed':'교수자 확정','error':'평가 실패'}
         for i,row in enumerate(self.rows):
             for column,value in enumerate([row.get('student',''),labels.get(row['status'],row['status']),
+                    '' if row.get('overall') is None else f"{row['overall']}/100",
                     '' if row.get('suggested_score') is None else f"{row['suggested_score']}/{row['max_score']}",row.get('final_score')]):
                 self.table.setItem(i,column,QTableWidgetItem('' if value is None else str(value)))
         if selected>=0:self.table.selectRow(selected)
@@ -187,8 +242,12 @@ class QualitativeWindow(QWidget):
         row=self.rows[index]
         if row['status']=='error':self.detail.setPlainText(row.get('message',''));self.confirm_button.setEnabled(False);return
         parts=[row['summary']]
+        if row.get('scoring_version') == SCORING_VERSION:
+            parts.extend([f'종합 품질: {row["overall"]}/100 · 제안 부분점수: {row["suggested_score"]}/{row["max_score"]}',
+                f'자원 관리: {row["resource_score"] if row["resource_score"] is not None else "비적용"} · 종합 분모 {row["overall_denominator"]}, 부분점수 분모 {row["partial_denominator"]}'])
         for item in row['criteria']:
-            parts.append(f"\n{item['name']}: {item['score']}/{item['max_score']}\n{item['reason']}")
+            mark='제외 (계산에 반영하지 않음)' if item.get('applicable') is False else f"{item['score']}/{item['max_score']}"
+            parts.append(f"\n{item['name']}: {mark}\n{item['reason']}")
             for ref in item['evidence']:parts.append(f"  {ref['file']}:{ref['line']}  {ref['code']}")
         for key,title in [('strengths','강점'),('improvements','개선 의견'),('uncertainties','불확실한 부분')]:
             parts.append('\n'+title+'\n'+'\n'.join(row[key]))
@@ -220,10 +279,11 @@ class QualitativeWindow(QWidget):
             self.rows=data['results'];self.context=data['context'];self.archive=Path(path)
             self.problem_text.setPlainText(str(self.context.get('problem','')))
             self.rubric=deepcopy(rules)
-            self.rubric_table.setRowCount(len(rules))
-            for i,rule in enumerate(rules):
-                for column,key in enumerate(('name','max_score','description')):
-                    self.rubric_table.setItem(i,column,QTableWidgetItem(str(rule[key])))
+            self.populate_rubric()
+            self.problem_points.setValue(int(self.context.get('problem_points',100)))
+            for kind,combo in self.resource_modes.items():
+                combo.setCurrentIndex(combo.findData(self.context.get('resource_policy',{}).get(kind,'auto')))
+            self.refresh_resource_info()
             self.refresh_rows();self.set_busy(False);self.status.setText('평가 기록을 불러왔습니다. 검토 후 확정할 수 있습니다.')
         except (OSError,ValueError,TypeError) as error:self.status.setText('불러오기 실패: '+str(error))
 

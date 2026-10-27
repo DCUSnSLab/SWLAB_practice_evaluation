@@ -11,11 +11,12 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from qualitative import (DEFAULT_RUBRIC,validate_rubric,validate_review,collect_sources,
     review_sources,review_batch,confirm_review,save_reviews,load_reviews)
 from llm_cases import LLMClient
+from qualitative_rubric import resource_scope
 
 
 def answer():
     return {'summary':'샘플 평가','strengths':['명확한 흐름'],'improvements':['실패 처리 보완'],'uncertainties':[],
-            'criteria':[{'id':r['id'],'score':r['max_score']/2,'reason':'코드에서 확인한 근거',
+            'criteria':[{'id':r['id'],'score':5,'assessment':'코드에서 확인한 근거','suggestion':'실패 처리를 보완하세요.',
                          'evidence':[{'file':'main.c','line':1}]} for r in DEFAULT_RUBRIC]}
 
 
@@ -28,7 +29,7 @@ class QualitativeTests(unittest.TestCase):
         self.assertEqual(result['criteria'][0]['evidence'][0]['code'],'int main(){return 0;}')
 
     def test_invalid_scores_fail(self):
-        for score in [-1,999,float('nan'),float('inf'),True]:
+        for score in [-1,999,5.5,float('nan'),float('inf'),True]:
             value=answer();value['criteria'][0]['score']=score
             with self.subTest(score=score),self.assertRaises(ValueError):
                 validate_review(value,DEFAULT_RUBRIC,{'main.c':'line'})
@@ -65,7 +66,8 @@ class QualitativeTests(unittest.TestCase):
         messages=request.call_args.args[1]['messages']
         self.assertIn('UNTRUSTED',messages[0]['content'])
         body=json.loads(messages[1]['content'])
-        self.assertEqual(set(body),{'problem','rubric','source_files'})
+        self.assertEqual(set(body),{'problem','rubric','source_files','resource_scope','problem_points'})
+        self.assertTrue(body['resource_scope']['files']['applicable'])
         self.assertIn('1: //',body['source_files']['main.c'])
         self.assertIn('main.c',result['source_sha256'])
 
@@ -84,7 +86,7 @@ class QualitativeTests(unittest.TestCase):
             Path(temp,'copy.c').write_text('int main(){}');Path(temp,'scratch.c').write_text('int x;');Path(temp,'book.h').write_text('#pragma once')
             contexts=[{'student':'a','path':temp,'sources':['copy.c','*.h']},{'student':'b','path':temp,'sources':['searchbook.c','*.h']},{'student':'c','path':temp}]
             seen=[]
-            def review(client,problem,rubric,sources):
+            def review(client,problem,rubric,sources,**options):
                 seen.append(sorted(sources));return {'status':'ai_proposed','suggested_score':1}
             with patch('qualitative.review_sources',side_effect=review):
                 rows=list(review_batch(LLMClient('https://example.invalid','test-model'),'problem',DEFAULT_RUBRIC,contexts))
@@ -111,10 +113,12 @@ class QualitativeTests(unittest.TestCase):
             path=Path(temp,'review.json');save_reviews(path,[row],{'problem':'copy'})
             loaded=json.loads(path.read_text(encoding='utf-8'))
             self.assertEqual(loaded['context']['problem'],'copy')
-            self.assertEqual(len(loaded['results'][0]['criteria']),5)
+            self.assertEqual(len(loaded['results'][0]['criteria']),7)
             path=Path(temp,'review.csv');save_reviews(path,[row],{})
             with path.open(encoding='utf-8-sig') as stream:records=list(csv.DictReader(stream))
-            self.assertEqual(len(records),5)
+            self.assertEqual(len(records),7)
+            self.assertEqual(records[-1]['criterion_score'],'')
+            self.assertEqual(records[-1]['applicable'],'False')
             self.assertEqual(records[0]['summary'],"'=SUM(A1)")
             self.assertEqual(records[0]['final_score'],'')
 
@@ -128,6 +132,44 @@ class QualitativeTests(unittest.TestCase):
             row['criteria'][0]['score']=999
             save_reviews(path,[row],{})
             with self.assertRaises(ValueError):load_reviews(path)
+
+    def test_resources_affect_proposal_and_survive_export_reload(self):
+        raw=answer()
+        for item in raw['criteria']:
+            item['score']=0 if item['id']=='resource_files' else 10
+        scope=resource_scope('파일을 읽는다.',{})
+        row=validate_review(raw,DEFAULT_RUBRIC,{'main.c':'line'},total_score=75,resource_scope=scope)
+        self.assertEqual(row['overall'],80)
+        self.assertEqual(row['suggested_score'],50)
+        self.assertEqual([c['score'] for c in row['criteria'][-3:]],[0,None,None])
+        row.update(status='ai_proposed',final_score=None,reviewer_note='')
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp,'review.json')
+            save_reviews(path,[row],{'rubric':DEFAULT_RUBRIC})
+            self.assertEqual(load_reviews(path)['version'],2)
+            self.assertEqual(load_reviews(path)['results'][0],row)
+            for key,value in [('overall',100),('suggested_score',75),('partial_denominator',20),('resource_score',10)]:
+                broken=deepcopy(row);broken[key]=value
+                save_reviews(path,[broken],{})
+                with self.subTest(key=key),self.assertRaises(ValueError):load_reviews(path)
+
+    def test_assessment_and_suggestion_required(self):
+        for key in ('assessment','suggestion'):
+            value=answer();value['criteria'][0][key]=''
+            with self.assertRaises(ValueError):validate_review(value,DEFAULT_RUBRIC,{'main.c':'line'})
+
+    def test_legacy_report_stays_readable_with_original_score(self):
+        row=dict(summary='이전 평가',strengths=[],improvements=[],uncertainties=[],
+                 status='ai_proposed',suggested_score=15,max_score=30,final_score=None,reviewer_note='',
+                 criteria=[dict(id='requirements',name='요구사항',score=15,max_score=30,reason='이전 기준',evidence=[])])
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp,'old.json');save_reviews(path,[row],{})
+            loaded=load_reviews(path)
+            self.assertEqual(loaded['version'],1)
+            self.assertEqual(loaded['results'][0],row)
+            confirm_review(loaded['results'][0],20,'이전 기준 유지 후 검토')
+            save_reviews(path,loaded['results'],loaded['context'])
+            self.assertEqual(load_reviews(path)['results'][0]['suggested_score'],15)
 
 
 if __name__=='__main__':unittest.main()
