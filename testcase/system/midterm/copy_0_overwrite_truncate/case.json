@@ -17,5 +17,6 @@
   "comparison": "regex",
   "expected": ".*AbZ.*",
   "timeout": 10,
-  "description": "복사 결과와 원본 불변을 검사. 화면 안내 문구는 허용."
+  "description": "복사 결과와 원본 불변을 검사. 화면 안내 문구는 허용.",
+  "enabled": true
 }

@@ -62,6 +62,8 @@ def load_suite(target=ALL_TARGETS, profile_path=None, include_extra=True):
     if target in (ALL_TARGETS, 'copy.c'):
         cases.extend(dict(c, midterm_kind='copy') for c in Grader().load_test_cases(COPY_CASES))
     for case in suite['cases']:
+        if case.get('enabled', True) is False:
+            continue
         if target not in (ALL_TARGETS, case['target_file']) or (not include_extra and case.get('category') == 'extra'):
             continue
         cases.append(dict(case, midterm_kind='copy_error' if case['target_file'] == 'copy.c' else 'library'))
@@ -76,7 +78,8 @@ def problem_rows():
     cases = []
     try:
         cases = [*Grader().load_test_cases(COPY_CASES),
-                 *json.loads((SUITE / 'scenarios.json').read_text(encoding='utf-8'))['cases']]
+                 *[c for c in json.loads((SUITE / 'scenarios.json').read_text(encoding='utf-8'))['cases']
+                   if c.get('enabled', True) is not False]]
         counts = Counter(c['target_file'] for c in cases)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         counts = Counter()

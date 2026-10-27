@@ -16,5 +16,6 @@
   "file_comparison": "exact",
   "comparison": "regex",
   "expected": ".*space path abc.*",
-  "timeout": 10
+  "timeout": 10,
+  "enabled": false
 }

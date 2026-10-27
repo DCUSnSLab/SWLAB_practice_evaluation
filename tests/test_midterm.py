@@ -10,7 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from grader import Grader
 from midterm import (SUITE, COPY_CASES, ROW, parse_records, compare_records,
-                     registration_input, library_case, copy_error_case, main)
+                     registration_input, library_case, copy_error_case, main, load_suite)
 
 
 class MidtermTests(unittest.TestCase):
@@ -49,7 +49,10 @@ class MidtermTests(unittest.TestCase):
 
     def test_cases_target_single_source_and_preserve_source_file(self):
         cases = Grader().load_test_cases(COPY_CASES)
-        self.assertEqual(len(cases), 19)
+        self.assertEqual(len(cases), 4)
+        selected = load_suite('copy.c')['cases']
+        self.assertEqual({c['name'] for c in selected}, {'copy_0_example', 'copy_1_example',
+            'copy_2_example', 'copy_0_overwrite_truncate', 'copy_missing_source'})
         for case in cases:
             self.assertEqual(case['target_file'], 'copy.c')
             self.assertEqual(case['sources'], ['copy.c'])
@@ -151,6 +154,8 @@ class MidtermTests(unittest.TestCase):
             for row in Grader().grade_student(work, Grader().load_test_cases(COPY_CASES), config):
                 self.assertTrue(row['passed'], row)
             for case in self.suite['cases']:
+                if case.get('enabled', True) is False:
+                    continue
                 with self.subTest(case=case['name']):
                     row = copy_error_case(work, case, config) if case['target_file'] == 'copy.c' else library_case(
                         work, case, self.suite['datasets'], self.profile, config)

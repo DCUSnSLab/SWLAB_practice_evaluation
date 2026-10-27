@@ -25,7 +25,7 @@ class MidtermScoringTests(unittest.TestCase):
 
     def test_maximum_matches_paper_and_problem_ratios_not_global_ratio(self):
         self.assertEqual(self.scores()['final_score'], 75)
-        # Fail one of two required 20-point year-sort cases: lose 10, not 75/52.
+        # Fail one of two required 20-point year-sort cases: lose 10, not 75/36.
         row = next(r for r in self.rows if r['case'] == 'sortedbookcreate.c / store_year_descending')
         row.update(status='wrong_answer', passed=False)
         result = self.scores()
@@ -42,14 +42,14 @@ class MidtermScoringTests(unittest.TestCase):
                 row.update(status='needs_review', passed=False)
         self.assertEqual(self.scores()['final_score'], 75)
         self.assertEqual(self.scores()['status'], 'graded')
-        self.assertEqual(self.scores()['passed_cases'], 44)
+        self.assertEqual(self.scores()['passed_cases'], 28)
         self.assertIn('추가 8건 미통과·점수 제외', self.scores()['reason'])
 
     def test_rounding_is_per_problem_and_empty_scores_are_not_zero(self):
         self.rows[0].update(status='wrong_answer', passed=False)
         score = self.scores()
-        self.assertEqual(score['problems']['copy.c']['final_score'], 9.52)
-        self.assertEqual(score['final_score'], 74.52)
+        self.assertEqual(score['problems']['copy.c']['final_score'], 8)
+        self.assertEqual(score['final_score'], 73)
         self.rows[0].update(status='needs_review')
         score = self.scores()
         self.assertIsNone(score['final_score'])
@@ -109,17 +109,17 @@ class MidtermScoringTests(unittest.TestCase):
             report.override_midterm_score('101', 'copy.c', 9.8, 'teacher', 'output format reviewed')
             report, saved = CaseReport.open(report.directory / 'run.json')
             score = saved['scores'][0]
-            self.assertEqual(score['auto_score'], 74.52)
+            self.assertEqual(score['auto_score'], 73)
             self.assertEqual(score['final_score'], 74.8)
             self.assertFalse(saved['results'][0]['passed'])
-            self.assertEqual(score['problems']['copy.c']['overrides'][0]['previous_score'], 9.52)
+            self.assertEqual(score['problems']['copy.c']['overrides'][0]['previous_score'], 8)
             report.override_midterm_score('101', 'copy.c', 10, 'teacher', 'second review')
             _, saved = CaseReport.open(report.directory / 'run.json')
             self.assertEqual(len(saved['score_overrides']['101']['copy.c']), 2)
             with (report.directory / 'summary.csv').open(encoding='utf-8-sig', newline='') as stream:
                 row = next(csv.DictReader(stream))
             self.assertEqual(row['final_score'], '75.0')
-            self.assertEqual(row['copy.c_auto'], '9.52')
+            self.assertEqual(row['copy.c_auto'], '8.0')
             self.assertEqual(row['copy.c_final'], '10.0')
             self.assertIn('second review', row['reason'])
 

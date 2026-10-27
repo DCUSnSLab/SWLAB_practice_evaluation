@@ -517,7 +517,8 @@
         "source.txt",
         "destination.txt"
       ],
-      "error_regex": "error|fail|cannot|can.t|not\\s+found|no\\s+such|invalid|오류|에러|실패|없|불가|디렉터리|directory|denied"
+      "error_regex": "error|fail|cannot|can.t|not\\s+found|no\\s+such|invalid|오류|에러|실패|없|불가|디렉터리|directory|denied",
+      "enabled": true
     },
     {
       "name": "copy_destination_directory",
@@ -528,7 +529,8 @@
         "source.txt",
         "destination.txt"
       ],
-      "error_regex": "error|fail|cannot|can.t|not\\s+found|no\\s+such|invalid|오류|에러|실패|없|불가|디렉터리|directory|denied"
+      "error_regex": "error|fail|cannot|can.t|not\\s+found|no\\s+such|invalid|오류|에러|실패|없|불가|디렉터리|directory|denied",
+      "enabled": false
     }
   ],
   "status_semantics": "True/1 = available, False/0 = on loan (instructor clarification)"

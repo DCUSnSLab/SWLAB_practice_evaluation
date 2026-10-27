@@ -72,10 +72,10 @@ class MidtermGuiTests(unittest.TestCase):
         w = self.window
         self.assertEqual(w.comboProblem.count(), 8)
         self.assertEqual(w.selectedProblem(), ALL_TARGETS)
-        self.assertEqual(w.active_case_count, 52)
+        self.assertEqual(w.active_case_count, 36)
         self.assertTrue(w.midtermPanel.isVisible())
         self.assertFalse(w.btnCasePath.isVisible())
-        for source, count in zip(TARGETS, [21, 3, 4, 10, 3, 7, 4]):
+        for source, count in zip(TARGETS, [5, 3, 4, 10, 3, 7, 4]):
             w.comboProblem.setCurrentIndex(w.comboProblem.findData(source))
             self.assertEqual(w.active_case_count, count)
             self.assertEqual(w.listFiles.currentItem().text(), source)
@@ -108,16 +108,16 @@ class MidtermGuiTests(unittest.TestCase):
             self.assertFalse(w.txtMidtermProfile.isEnabled())
             self.finish_job()
         self.assertEqual(seen, ['101', '102'])
-        self.assertEqual(len(w.results), 104)
+        self.assertEqual(len(w.results), 72)
         archive = w.case_report.directory / 'run.json'
         _, saved = CaseReport.open(archive)
         self.assertEqual(saved['state'], 'completed')
-        self.assertEqual(len(saved['context']['midterm_suite']['cases']), 52)
+        self.assertEqual(len(saved['context']['midterm_suite']['cases']), 36)
         self.assertEqual(saved['context']['midterm_suite']['available_policy'], 'true_means_available')
-        self.assertEqual(w.resultTable.item(0, 10).text(), '51 / 52')
-        self.assertEqual(w.resultTable.item(0, 2).text(), '74.52 / 75')
+        self.assertEqual(w.resultTable.item(0, 10).text(), '35 / 36')
+        self.assertEqual(w.resultTable.item(0, 2).text(), '73 / 75')
         self.assertEqual(w.resultTable.horizontalHeaderItem(11).text(), '사유')
-        self.assertIn('필수 20/21 통과', w.resultTable.item(0, 11).text())
+        self.assertIn('필수 4/5 통과', w.resultTable.item(0, 11).text())
         self.assertIn('검토 필요', w.resultTable.item(1, 11).toolTip())
         self.assertEqual(w.resultTable.item(1, 1).text(), '검토 필요')
         self.assertEqual(w.resultTable.item(1, 2).text(), '검토 필요')
@@ -126,7 +126,7 @@ class MidtermGuiTests(unittest.TestCase):
         self.assertIn('실행 단계: bookupdate.c', w.resultDetail.toPlainText())
         with patch('gui.QFileDialog.getOpenFileName', return_value=(str(archive), '')):
             w.readCaseReport()
-        self.assertEqual(len(w.results), 104)
+        self.assertEqual(len(w.results), 72)
         from PyQt6.QtCore import QTimer
         from PyQt6.QtWidgets import QLineEdit, QDoubleSpinBox, QPushButton
         def adjust():
@@ -146,7 +146,7 @@ class MidtermGuiTests(unittest.TestCase):
         import csv
         with export.open(encoding='utf-8-sig', newline='') as stream:
             summary = next(csv.DictReader(stream))
-        self.assertEqual(summary['auto_score'], '74.52')
+        self.assertEqual(summary['auto_score'], '73.0')
         self.assertEqual(summary['final_score'], '75.0')
         self.assertIn('manual review of copy output', summary['reason'])
 
@@ -173,15 +173,15 @@ class MidtermGuiTests(unittest.TestCase):
             grade.assert_not_called()
 
     @unittest.skipUnless(os.environ.get('SWLAB_TEST_DOCKER') == '1', 'Set SWLAB_TEST_DOCKER=1')
-    def test_docker_gui_grades_all_52_cases_from_flat_midterm(self):
+    def test_docker_gui_grades_all_36_cases_from_flat_midterm(self):
         w = self.window
         w.listStudents.clearSelection(); w.listStudents.item(0).setSelected(True)
         w.radioDocker.setChecked(True)
         w.gradeSelected(); self.finish_job(180)
-        self.assertEqual(len(w.results), 52)
+        self.assertEqual(len(w.results), 36)
         self.assertTrue(all(row['passed'] for row in w.results), [(r['case'], r.get('message')) for r in w.results if not r['passed']])
         self.assertEqual({r['target_file'] for r in w.results}, set(TARGETS))
-        self.assertEqual(w.resultTable.item(0, 10).text(), '52 / 52')
+        self.assertEqual(w.resultTable.item(0, 10).text(), '36 / 36')
         self.assertEqual(w.resultTable.item(0, 2).text(), '75 / 75')
         work = self.root / 'origin/system_3_2026/101/midterm'
         self.assertEqual((work / 'db.dat').read_bytes(), b'original student database')
