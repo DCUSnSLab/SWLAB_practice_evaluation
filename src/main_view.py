@@ -4,6 +4,13 @@ from PyQt6.QtWidgets import *
 from ui_theme import apply_theme, selected_theme
 
 
+class StudentNameDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        name = index.data(Qt.ItemDataRole.UserRole)
+        if name: option.text = f'{option.text} · {name}'
+
+
 def build_main_view(w):
     points = apply_theme()
     w.setWindowTitle('SWLAB · 실습 일괄 채점')
@@ -91,6 +98,7 @@ def build_main_view(w):
     note = QLabel('클릭하여 포함 / 제외')
     note.setWordWrap(True); note.setObjectName('muted'); student_layout.addWidget(note)
     w.listStudents = QListWidget(); w.listStudents.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+    w.listStudents.setItemDelegate(StudentNameDelegate(w.listStudents))
     w.listStudents.itemSelectionChanged.connect(w.onStudentSelected)
     w.btnSelectAll.clicked.connect(w.listStudents.selectAll)
     w.btnClearSelection.clicked.connect(w.listStudents.clearSelection)

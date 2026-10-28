@@ -117,7 +117,8 @@ def score_students(rows, context, state='completed', overrides=None):
         brief = ' / '.join(reasons[:2]) + (f' 외 {len(reasons) - 2}건' if len(reasons) > 2 else '')
         if len(brief) > 120:
             brief = brief[:117] + '…'
-        result.append(dict(student=student, status=status, auto_score=total(auto_scores), final_score=final,
+        result.append(dict(student=student, student_name=context.get('student_names', {}).get(student, ''),
+                           status=status, auto_score=total(auto_scores), final_score=final,
                            max_score=sum(POINTS[t] for t in selected), problems=problems,
                            known_score=float(sum(Decimal(str(v)) for v in final_scores if v is not None)),
                            passed_cases=sum(r.get('passed') is True for r in own if not r['status'].startswith('manual_')),
@@ -126,14 +127,14 @@ def score_students(rows, context, state='completed', overrides=None):
 
 
 def export_scores(path, scores):
-    columns = ['student', 'status', 'auto_score', 'final_score', 'max_score', 'reason']
+    columns = ['student', 'student_name', 'status', 'auto_score', 'final_score', 'max_score', 'reason']
     for target in POINTS:
         columns.extend([target + '_auto', target + '_final', target + '_max'])
     stream = io.StringIO(newline='')
     writer = csv.DictWriter(stream, fieldnames=columns)
     writer.writeheader()
     for score in scores:
-        row = {key: score[key] for key in columns[:6]}
+        row = {key: score.get(key, '') for key in columns[:7]}
         for target, problem in score['problems'].items():
             row.update({target + '_auto': problem['auto_score'], target + '_final': problem['final_score'],
                         target + '_max': problem['max_score']})

@@ -16,7 +16,7 @@ def save_report(path, records):
         atomic_text(path, json.dumps({'created_at': datetime.now(timezone.utc).isoformat(),
                                     'results': records}, ensure_ascii=False, indent=2))
         return
-    columns = ['class_name', 'student', 'chapter', 'problem', 'case', 'status', 'passed', 'returncode', 'actual', 'expected', 'stderr', 'message']
+    columns = ['class_name', 'student', 'student_name', 'chapter', 'problem', 'case', 'status', 'passed', 'returncode', 'actual', 'expected', 'stderr', 'message']
     with io.StringIO(newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=columns, extrasaction='ignore')
         writer.writeheader()
@@ -68,9 +68,10 @@ class CaseReport:
         if 'scores' in document:
             export_scores(self.directory / 'summary.csv', document['scores'])
             return
-        summary = summarize_cases(rows, self.context.get('students', []), self.context.get('case_count', 0), state)
+        summary = summarize_cases(rows, self.context.get('students', []), self.context.get('case_count', 0), state,
+                                  self.context.get('student_names'))
         with io.StringIO(newline='') as stream:
-            columns = ['student', 'status', 'passed_cases', 'total_cases']
+            columns = ['student', 'student_name', 'status', 'passed_cases', 'total_cases']
             writer = csv.DictWriter(stream, fieldnames=columns)
             writer.writeheader()
             for row in summary:
@@ -100,10 +101,14 @@ class CaseReport:
         self.save(saved['results'], self.state, saved.get('error'))
 
 
-def summarize_cases(rows, students=None, case_count=0, state='completed'):
+def summarize_cases(rows, students=None, case_count=0, state='completed', names=None):
+    """`names` maps student ID to roster name; rows carrying `student_name` fill the rest. IDs stay the key."""
     grouped = {}
+    names = dict(names or {})
     for row in rows:
         grouped.setdefault(row['student'], []).append(row)
+        if row.get('student_name') and not names.get(row['student']):
+            names[row['student']] = row['student_name']
     summaries = []
     for student in dict.fromkeys([*(students or []), *grouped]):
         cases = [r for r in grouped.get(student, []) if not r['status'].startswith('manual_')]
@@ -113,7 +118,7 @@ def summarize_cases(rows, students=None, case_count=0, state='completed'):
             status = 'needs_review'
         if not cases and grouped.get(student):
             status = 'manual_review'
-        summaries.append({'student': student, 'status': status,
+        summaries.append({'student': student, 'student_name': names.get(student, ''), 'status': status,
                           'passed_cases': sum(r['passed'] for r in cases) if status == 'graded' else None,
                           'total_cases': case_count or len(cases)})
     return summaries

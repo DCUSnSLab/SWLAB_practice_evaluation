@@ -13,6 +13,7 @@ from llm_config import llm_settings
 from materials import build_catalog
 from slide_picker import SlidePicker
 from paths import ROOT
+from student_names import fill_student_names, student_label
 from qualitative import DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,confirm_reviews,save_reviews,load_reviews
 from qualitative_rubric import (SCORING_VERSION, RESOURCE_IDS, resource_scope,
     validate_dcucode_rubric)
@@ -41,7 +42,8 @@ class QualitativeWindow(QWidget):
         self.setWindowTitle('Qwen 정성평가'+(' · '+self.preset['title'] if self.preset.get('title') else ''))
         self.resize(1200,850)
         self.submissions = deepcopy(submissions)
-        self.rows = [self.unreviewed_row(s) for s in submissions]
+        fill_student_names(self.submissions)
+        self.rows = [self.unreviewed_row(s) for s in self.submissions]
         self.completed_count = 0
         self.cancel_requested = False
         self.context = {}
@@ -112,8 +114,9 @@ class QualitativeWindow(QWidget):
         self.refresh_resource_info()
         split.addWidget(config)
         panel=QWidget();layout=QVBoxLayout(panel)
-        self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['학생','상태','종합 품질 / 100','제안 부분점수','교수자 확정'])
+        self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['학번 · 이름','상태','종합 품질 / 100','제안 부분점수','교수자 확정'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(0,QHeaderView.ResizeMode.ResizeToContents)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -187,6 +190,9 @@ class QualitativeWindow(QWidget):
                 available[key]=len(self.submissions);self.submissions.append(deepcopy(submission))
             if key not in row_keys:
                 self.rows.append(self.unreviewed_row(submission));row_keys.add(key)
+            elif submission.get('student_name'):
+                for row in self.rows:
+                    if self.submission_key(row)==key:row['student_name']=submission['student_name']
         self.refresh_rows()
         self.select_rows([i for i,row in enumerate(self.rows) if self.submission_key(row) in keys])
 
@@ -357,7 +363,7 @@ class QualitativeWindow(QWidget):
         with QSignalBlocker(self.table):
             self.table.setRowCount(len(self.rows))
             for i,row in enumerate(self.rows):
-                for column,value in enumerate([row.get('student',''),labels.get(row['status'],row['status']),
+                for column,value in enumerate([student_label(row),labels.get(row['status'],row['status']),
                     '' if row.get('overall') is None else f"{row['overall']}/100",
                     '' if row.get('suggested_score') is None else f"{row['suggested_score']}/{row['max_score']}",row.get('final_score')]):
                     self.table.setItem(i,column,QTableWidgetItem('' if value is None else str(value)))
@@ -446,7 +452,8 @@ class QualitativeWindow(QWidget):
         try:
             data=load_reviews(path)
             rules=validate_rubric(data['context'].get('rubric',deepcopy(DEFAULT_RUBRIC)))
-            self.rows=data['results'];self.context=data['context'];self.archive=Path(path)
+            self.rows=data['results'];fill_student_names(self.rows)
+            self.context=data['context'];self.archive=Path(path)
             self.problem_text.setPlainText(str(self.context.get('problem','')))
             self.rubric=deepcopy(rules)
             self.populate_rubric()

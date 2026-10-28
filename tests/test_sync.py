@@ -48,8 +48,10 @@ class SyncTests(unittest.TestCase):
             worker.done_message.connect(done.append)
             worker.in_progress_message.connect(progress.append)
             worker.set_progress_value.connect(maxima.append)
-            with patch('lecture.gitManager', FakeManager):
+            with patch('lecture.gitManager', FakeManager), patch('paths.ORIGIN',Path(temp)/'origin'), patch('paths.ROOT',Path(temp)):
                 worker.do_work(str(roster))
+                from student_names import read_student_names
+                self.assertEqual(read_student_names('system_1_2026')['102'],'둘학생')
             self.assertEqual(len(done), 1)
             summary = done[0]
             self.assertEqual((summary['total'], summary['success'], summary['failed']), (4, 2, 2))

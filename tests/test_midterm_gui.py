@@ -215,6 +215,44 @@ class MidtermGuiTests(unittest.TestCase):
         self.assertIsNone(preset)
         self.assertNotIn('sources', submissions[0])
 
+    def test_names_appear_in_main_and_qualitative_lists_while_ids_stay_unchanged(self):
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QStyleOptionViewItem
+        w=self.window
+        with patch('student_names.read_student_names',return_value={'101':'첫 학생','102':'둘째 학생'}):
+            w.onClassSelected()
+        w.comboChapter.setCurrentText('midterm')
+        item=w.listStudents.item(0)
+        self.assertEqual(item.text(),'101')
+        self.assertEqual(item.data(Qt.ItemDataRole.UserRole),'첫 학생')
+        option=QStyleOptionViewItem()
+        w.listStudents.itemDelegate().initStyleOption(option,w.listStudents.model().index(0,0))
+        self.assertEqual(option.text,'101 · 첫 학생')
+        w.comboProblem.setCurrentIndex(w.comboProblem.findData('copy.c'))
+        w.openQualitative();review=w.qualitative_window;self.addCleanup(review.close)
+        self.assertEqual(review.table.item(0,0).text(),'101 · 첫 학생')
+        self.assertEqual(review.submissions[0]['student'],'101')
+        self.assertEqual(Path(review.submissions[0]['path']).parent.name,'101')
+        review.student_search.setText('102')
+        self.assertEqual(review.table.item(review.table.currentRow(),0).text(),'102 · 둘째 학생')
+        review.close()
+        # Grading results keep the ID as the key while the table, log and CSV/JSON carry the name.
+        (w.radioWin if os.name == 'nt' else w.radioLinux).setChecked(True)
+        with patch('midterm.grade_suite',return_value=[dict(case='copy.c / x',target_file='copy.c',passed=True,status='passed')]), \
+                patch.object(QMessageBox,'warning') as warning:
+            w.gradeSelected();warning.assert_not_called();self.finish_job()
+        self.assertEqual(w.case_report.context['student_names'],{'101':'첫 학생','102':'둘째 학생'})
+        self.assertEqual([r['student_name'] for r in w.results],['첫 학생','둘째 학생'])
+        self.assertEqual(w.resultTable.item(0,0).text(),'101 · 첫 학생')
+        self.assertEqual(w.resultStudent(0),'101')
+        w.resultTable.selectRow(1)
+        self.assertIn('102 · 둘째 학생',w.resultDetail.toPlainText())
+        import csv
+        with (w.case_report.directory/'summary.csv').open(encoding='utf-8-sig',newline='') as stream:summary=list(csv.DictReader(stream))
+        self.assertEqual([(s['student'],s['student_name']) for s in summary],[('101','첫 학생'),('102','둘째 학생')])
+        _,saved=CaseReport.open(w.case_report.directory/'run.json')
+        self.assertEqual(saved['results'][1]['student_name'],'둘째 학생')
+
     def test_reopening_qualitative_syncs_current_main_selection(self):
         w=self.window
         w.comboProblem.setCurrentIndex(w.comboProblem.findData('copy.c'))

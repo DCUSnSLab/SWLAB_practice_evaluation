@@ -226,7 +226,7 @@ def save_reviews(path, rows, context, *, csv_detail=False):
     temporary = path.with_name(path.name+'.tmp')
     if path.suffix.lower() == '.csv':
         with temporary.open('w',encoding='utf-8-sig',newline='') as stream:
-            fields = ['class_name','student','chapter','problem','status','suggested_score','max_score','final_score',
+            fields = ['class_name','student','student_name','chapter','problem','status','suggested_score','max_score','final_score',
                       'overall','resource_score','overall_denominator','partial_denominator','scoring_version',
                       'summary','reviewer_note','model','created_at','reviewed_at','message']
             criterion_ids = list(dict.fromkeys(c['id'] for row in rows for c in row.get('criteria',[])))

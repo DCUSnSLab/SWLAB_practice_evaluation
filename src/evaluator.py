@@ -30,6 +30,8 @@ class Evaluator(QObject):
         if not match:
             raise ValueError('CSV filename must be system_3.csv or python_test_2.csv.')
         lecture = self.getDatafromCSV(file, Lecture(year, match[1].lower(), int(match[2])))
+        from student_names import save_student_names
+        save_student_names(lecture.getfilepath(), [{'student_id': str(s.sid), 'name': s.name} for s in lecture.getStudentList()])
         lecture.log_message.connect(self.log_message.emit)
         return lecture.syncCodefromLecture(self.progress_status)
 

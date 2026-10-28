@@ -87,6 +87,25 @@ class QualitativeSelectionTests(unittest.TestCase):
         self.assertEqual(w.search_result.text(),'')
         self.assertEqual(w.selected_indices(),[0,2])
 
+    def test_names_survive_review_csv_and_report_reload_without_entering_model_request(self):
+        w=self.window
+        w.select_submissions([{**self.submissions[1],'student_name':'이름표시학생'}])
+        self.assertEqual(w.table.item(1,0).text(),'102 · 이름표시학생')
+        with patch('llm_cases.LLMClient._request',return_value=self.payload) as request:
+            w.start_button.click();self.finish()
+        self.assertNotIn('이름표시학생',json.dumps(request.call_args.args[1],ensure_ascii=False))
+        self.assertEqual(w.rows[1]['student_name'],'이름표시학생')
+        self.assertEqual(load_reviews(w.archive)['results'][1]['student_name'],'이름표시학생')
+        import csv
+        path=self.root/'names.csv';save_reviews(path,w.rows,w.context)
+        with path.open(encoding='utf-8-sig',newline='') as stream:records=list(csv.DictReader(stream))
+        self.assertEqual(records[1]['student'],'102')
+        self.assertEqual(records[1]['student_name'],'이름표시학생')
+        reopened=QualitativeWindow([]);self.addCleanup(reopened.close)
+        with patch('qualitative_gui.QFileDialog.getOpenFileName',return_value=(str(w.archive),'')):
+            reopened.open_report()
+        self.assertEqual(reopened.table.item(1,0).text(),'102 · 이름표시학생')
+
     def test_search_prefers_exact_id_and_tracks_updated_roster(self):
         w=self.window
         w.rows[0]['student']='001020';w.rows[1]['student']='00102';w.rows[2]['student']='001021'
