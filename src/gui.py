@@ -269,7 +269,15 @@ class Gui(QMainWindow):
         self.casePathPanel.setVisible(not midterm and self.btnCasePath.isChecked())
         self.updateTestCasePath()
         self.updateFileList()
+        scope = self.selectedResultScope()
+        if self.case_report and self.case_report.context.get('class_name') and any(
+                self.case_report.context.get(key) != scope[key] for key in scope):
+            self.case_report = None
+            self.results = []
+            self.btnOpenReport.setEnabled(False)
+            self.report_location.setText('선택한 문제의 저장된 정성평가를 DB에서 불러옵니다.')
         self.refreshRunList()
+        self.refreshResultsTable()
 
     def updateFileList(self):
         self.listFiles.clear()
@@ -619,6 +627,8 @@ class Gui(QMainWindow):
 
     def refreshResultsTable(self):
         context = self.case_report.context if self.case_report else {}
+        self.loadResultReviews()
+        self.resultDetail.clear()
         scored = 'midterm_scoring' in context
         self.btnMidtermScore.setVisible(scored)
         if scored:
@@ -629,15 +639,34 @@ class Gui(QMainWindow):
         self.resultTable.blockSignals(True)
         self.resultTable.setSortingEnabled(False)
         self.resultTable.clearContents()
-        self.resultTable.setColumnCount(6)
-        self.resultTable.setHorizontalHeaderLabels(['학번', '이름', '판정', '기호', '통과 / 전체', '실패 케이스'])
-        if getattr(self,'_result_sort_schema',None)!='cases':
+        from result_reviews import HEADERS
+        self.resultTable.setColumnCount(6 + (len(HEADERS) if self.result_reviews else 0))
+        self.resultTable.setHorizontalHeaderLabels(['학번', '이름', '판정', '기호', '통과 / 전체', '실패 케이스'] +
+                                                   (HEADERS if self.result_reviews else []))
+        if (getattr(self,'_result_sort_schema',None)!='cases' or
+                self.resultTable.horizontalHeader().sortIndicatorSection() >= self.resultTable.columnCount()):
             self.resultTable.horizontalHeader().setSortIndicator(0,Qt.SortOrder.AscendingOrder)
         self._result_sort_schema='cases'
         self.resultTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.resultTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        summaries = summarize_cases(self.results, context.get('students'), context.get('case_count', 0),
-                                    self.case_report.state if self.case_report else 'completed', context.get('student_names'))
+        if self.result_reviews:
+            # Additional score columns should scroll, rather than squeezing IDs/names and headers.
+            header = self.resultTable.horizontalHeader()
+            header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            for column in range(6):
+                width = header.fontMetrics().horizontalAdvance(self.resultTable.horizontalHeaderItem(column).text()) + 36
+                self.resultTable.setColumnWidth(column, max(110, width))
+        students = context.get('students')
+        names = dict(context.get('student_names') or {})
+        if not self.case_report:
+            students = list(dict.fromkeys([*[self.listStudents.item(i).text() for i in range(self.listStudents.count())],
+                                           *self.result_reviews]))
+            names = self.studentNames()
+        for student, reviews in self.result_reviews.items():
+            if not names.get(student):
+                names[student] = next((r.get('student_name') for r in reviews if r.get('student_name')), '')
+        summaries = summarize_cases(self.results, students, context.get('case_count', 0),
+                                    self.case_report.state if self.case_report else 'completed', names)
         self.resultTable.setRowCount(len(summaries))
         labels = {'pending': '대기', 'not_run': '미실행', 'ungraded': '채점 불가', 'manual_review': '수동 검토',
                   'needs_review': '검토 필요'}
@@ -663,9 +692,57 @@ class Gui(QMainWindow):
                                      'X': '오답: 통과한 케이스가 없습니다.',
                                      '—': '아직 판정할 수 없습니다. 판정 열과 상세 근거를 확인하세요.'}[symbol])
                 self.resultTable.setItem(index, column, item)
+            self.setResultReviewCells(index, summary['student'], 6)
         self.resultTable.setSortingEnabled(True)
         self.resultTable.blockSignals(False)
         self.restoreResultStudent(selected)
+        self.showResultReviewLegend()
+
+    def selectedResultScope(self):
+        return dict(class_name=self.comboClass.currentData(), chapter=self.comboChapter.currentText(),
+                    problem=None if self.comboProblem.isHidden() else self.selectedProblem())
+
+    def loadResultReviews(self):
+        import db
+        scope = self.case_report.context if self.case_report else self.selectedResultScope()
+        problem = scope.get('problem')
+        problems = [problem]
+        if problem == '__all__':
+            from midterm import TARGETS
+            problems.extend(TARGETS)
+        self.result_reviews = {}
+        self.result_reviews_all = problem == '__all__'
+        try:
+            rows = db.latest_qualitative_reviews(scope.get('class_name'), scope.get('chapter'), problems)
+            for row in sorted(rows, key=lambda r: (str(r.get('problem') or ''), r['student'])):
+                self.result_reviews.setdefault(row['student'], []).append(row)
+            self.result_reviews_error = None
+        except Exception as exc:
+            self.result_reviews_error = str(exc)
+
+    def setResultReviewCells(self, index, student, start):
+        if not self.result_reviews:
+            return
+        from result_reviews import cells, details
+        reviews = self.result_reviews.get(student, [])
+        tooltip = '\n\n'.join(details(row) for row in reviews) or '이 문제에 저장된 정성평가가 없습니다.'
+        for column, (text, sort) in enumerate(cells(reviews, self.result_reviews_all), start):
+            item = SortableItem(text, sort)
+            item.setToolTip(tooltip)
+            self.resultTable.setItem(index, column, item)
+            self.resultTable.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
+            self.resultTable.setColumnWidth(column, 170)
+
+    def showResultReviewLegend(self):
+        if self.result_reviews_error:
+            self.resultLegend.setText(self.resultLegend.text() + '\n정성평가 DB 읽기 실패: ' + self.result_reviews_error)
+        elif self.result_reviews:
+            self.resultLegend.setText(self.resultLegend.text() +
+                '\n정성평가: DB의 학생·문제별 최근 평가(재시도 실패 시 이전 점수 유지) · 확정 전 점수는 AI 제안 · 실행 점수와 별도 표시' +
+                (' · 전체 보기에서는 파일별 점수를 각각 표시' if self.result_reviews_all else ''))
+        if not self.case_report and not self.results:
+            self.resultHeadline.setText(f'저장된 정성평가 {len(self.result_reviews)}명 · 실행 채점 미실행' if self.result_reviews
+                                       else '아직 채점 결과가 없습니다. 아래 일괄 채점 버튼을 눌러 시작하세요.')
 
     def midtermScores(self):
         from midterm_scoring import score_students
@@ -680,10 +757,13 @@ class Gui(QMainWindow):
         table.blockSignals(True)
         table.setSortingEnabled(False)
         table.clearContents()
-        table.setColumnCount(13)
+        from result_reviews import HEADERS
+        table.setColumnCount(13 + (len(HEADERS) if self.result_reviews else 0))
         table.setHorizontalHeaderLabels(['학번', '이름', '점수 상태', '총점',
-            *[f'{TARGETS[t].split(" · ")[0]}\n{POINTS[t]}점' for t in POINTS], '통과 / 전체', '사유'])
-        if getattr(self,'_result_sort_schema',None)!='midterm':
+            *[f'{TARGETS[t].split(" · ")[0]}\n{POINTS[t]}점' for t in POINTS], '통과 / 전체', '사유'] +
+            (HEADERS if self.result_reviews else []))
+        if (getattr(self,'_result_sort_schema',None)!='midterm' or
+                table.horizontalHeader().sortIndicatorSection() >= table.columnCount()):
             table.horizontalHeader().setSortIndicator(0,Qt.SortOrder.AscendingOrder)
         self._result_sort_schema='midterm'
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -695,7 +775,9 @@ class Gui(QMainWindow):
                   'pending': '대기', 'not_run': '미실행'}
         for index, row in enumerate(scores):
             total = '검토 필요' if row['final_score'] is None else f'{row["final_score"]:g} / {row["max_score"]:g}'
-            name=str(row.get('student_name') or '')
+            name=str(row.get('student_name') or self.studentNames().get(row['student']) or
+                     next((r.get('student_name') for r in self.result_reviews.get(row['student'], [])
+                           if r.get('student_name')), ''))
             values = [row['student'], name, labels[row['status']], total]
             sort_values=[student_sort_value(row['student']),name,values[2],row['final_score']]
             for target in POINTS:
@@ -717,10 +799,12 @@ class Gui(QMainWindow):
                     item.setToolTip(target + (f'\n필수 통과 {problem["passed_required"]}/{problem["required_cases"]}'
                                               f'\n자동 {problem["auto_score"]} / 최종 {problem["final_score"]} / 배점 {problem["max_score"]}' if problem else '\n이번 실행에서 선택하지 않은 문제'))
                 table.setItem(index, column, item)
+            self.setResultReviewCells(index, row['student'], 13)
         table.setSortingEnabled(True)
         table.blockSignals(False)
         self.resultLegend.setText('점수 = 문제 배점 × 필수 케이스 통과 비율 (소수 둘째 자리) · 추가 케이스는 점수 제외 · 검토 문제는 총점 미확정')
         self.restoreResultStudent(selected)
+        self.showResultReviewLegend()
 
     def adjustMidtermScore(self):
         if self.grading_active or not self.case_report or 'midterm_scoring' not in self.case_report.context:
@@ -778,6 +862,9 @@ class Gui(QMainWindow):
         student = self.resultStudent(index)
         from student_names import student_label
         lines = [f'학생 {student_label(dict(student=student,student_name=self.resultTable.item(index,1).text()))} · 케이스별 상세 결과']
+        from result_reviews import details
+        for review in getattr(self, 'result_reviews', {}).get(student, []):
+            lines.extend(['', details(review), ''])
         if self.case_report and 'midterm_scoring' in self.case_report.context:
             summary = next(s for s in self.midtermScores() if s['student'] == student)
             lines.append(f'총점: {summary["final_score"]} / {summary["max_score"]} · 문제별 필수 케이스 통과 비율 적용')
@@ -953,6 +1040,7 @@ class Gui(QMainWindow):
             QMessageBox.warning(self, '기록 가져오기 실패', str(exc))
             return
         self.refreshRunList()
+        self.refreshResultsTable()
         QMessageBox.information(self, '기록 가져오기', f'채점 {len(runs)}개 · 정성평가 {len(reviews)}개 실행을 DB에 추가했습니다.\n{db.default_path()}')
 
     def recordReview(self):
@@ -1071,6 +1159,7 @@ class Gui(QMainWindow):
                 existing.select_submissions(submissions);existing.raise_();return
             existing.close()
         self.qualitative_window = QualitativeWindow(submissions, preset)
+        self.qualitative_window.reviews_saved.connect(self.refreshResultsTable)
         self.qualitative_window.show()
 
     def openAIMaker(self):

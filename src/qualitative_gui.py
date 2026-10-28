@@ -37,6 +37,8 @@ class ReviewWorker(QThread):
 
 
 class QualitativeWindow(QWidget):
+    reviews_saved = pyqtSignal()
+
     def __init__(self,submissions,preset=None):
         """`preset` (title, problem, rubric, summary) prefills an exam such as the midterm; the instructor can still edit."""
         super().__init__()
@@ -474,6 +476,7 @@ class QualitativeWindow(QWidget):
             self.status.setText(f'{len(self.rows)}명 평가 기록 · DB 저장 · 내보내기: {self.archive}')
         except OSError as error:self.status.setText(f'자동 저장 실패(화면 결과는 유지): {error}')
         self.refresh_run_list()
+        self.reviews_saved.emit()
 
     def run_scope(self):
         """class / chapter / problem this window was opened for; saved batches are listed for the same scope."""
@@ -580,6 +583,7 @@ class QualitativeWindow(QWidget):
             import db
             db.save_qualitative(self.archive.stem,self.context,self.rows,data['version'],self.archive)
             self.refresh_run_list()
+            self.reviews_saved.emit()
             self.status.setText('평가 기록을 불러와 DB에 저장했습니다. 검토 후 확정할 수 있습니다.')
         except (OSError,ValueError,TypeError) as error:self.status.setText('불러오기 실패: '+str(error))
 

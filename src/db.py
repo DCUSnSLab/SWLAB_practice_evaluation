@@ -333,6 +333,45 @@ def list_qualitative(class_name=None, chapter=None, problem=None, limit=100):
     return runs
 
 
+def latest_qualitative_reviews(class_name, chapter, problems):
+    """Latest usable assessment per student/problem, across all batches in this exact scope.
+
+    A failed retry must not erase an existing score. Rank by the row's evaluation/
+    confirmation time, not the batch time: batches may carry unchanged older rows.
+    """
+    problems = list(problems)
+    if not class_name or not chapter or not problems:
+        return []
+    problem_filter = QualitativeRun.problem.in_([problem for problem in problems if problem is not None])
+    if None in problems:
+        problem_filter |= QualitativeRun.problem.is_null()
+    query = (QualitativeReview.select(QualitativeReview, QualitativeRun).join(QualitativeRun)
+             .where((QualitativeRun.class_name == class_name) & (QualitativeRun.chapter == chapter)
+                    & problem_filter))
+    latest = {}
+    def timestamp(value):
+        try:
+            return datetime.fromisoformat(value).timestamp()
+        except (TypeError, ValueError, OverflowError, OSError):
+            return 0
+    with session():
+        for review in query:
+            row = json.loads(review.data)
+            run = review.run
+            # Imported archives can contain rows from more than one assignment.
+            if (row.get('class_name', run.class_name), row.get('chapter', run.chapter),
+                    row.get('problem', run.problem)) != (class_name, chapter, run.problem):
+                continue
+            usable = row.get('status') in ('ai_proposed', 'confirmed') and review.suggested_score is not None
+            stamp = row.get('reviewed_at') or row.get('created_at') or run.created_at
+            rank = (usable, timestamp(stamp), timestamp(run.updated_at), run.id, review.position)
+            key = (review.student, run.problem)
+            if key not in latest or rank > latest[key][0]:
+                latest[key] = (rank, dict(row, student=review.student, problem=run.problem,
+                                         run_id=run.id, saved_at=stamp))
+    return [value[1] for value in latest.values()]
+
+
 def import_qualitative(root=None):
     """Load qualitative_*.json archives not yet in the database; returns the imported run IDs."""
     import paths
