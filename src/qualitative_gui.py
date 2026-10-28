@@ -56,6 +56,8 @@ class QualitativeWindow(QWidget):
         root = QVBoxLayout(self)
         server = QHBoxLayout()
         settings=QSettings('SWLAB','PracticeEvaluation')
+        self.layout_settings=settings
+        self.restoring_layout=True
         config_error=''
         try:
             config=llm_settings(settings)
@@ -76,7 +78,8 @@ class QualitativeWindow(QWidget):
         self.source_summary=QLabel('직접 입력 또는 슬라이드 선택');self.source_summary.setWordWrap(True)
         material.addWidget(self.load_problem_button);material.addWidget(self.source_summary,1)
         root.addLayout(material)
-        split=QSplitter()
+        split=QSplitter();self.main_splitter=split
+        split.setChildrenCollapsible(False);split.setHandleWidth(8)
         config=QTabWidget()
         self.problem_text=QPlainTextEdit();self.problem_text.setPlaceholderText('평가할 문제의 요구사항을 입력하거나 PPT 페이지에서 불러오세요.')
         self.rubric_table=QTableWidget(len(self.rubric),3)
@@ -117,9 +120,8 @@ class QualitativeWindow(QWidget):
         split.addWidget(config)
         panel=QWidget();layout=QVBoxLayout(panel)
         self.table=QTableWidget(0,6);self.table.setHorizontalHeaderLabels(['학번','이름','상태','종합 품질 / 100','제안 부분점수','교수자 확정'])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(0,QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1,QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setMinimumSectionSize(40)
         self.table.horizontalHeader().setSortIndicator(0,Qt.SortOrder.AscendingOrder)
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -134,8 +136,10 @@ class QualitativeWindow(QWidget):
         self.student_search.textChanged.connect(lambda _:self.find_student())
         self.student_search.returnPressed.connect(lambda:self.find_student(next_match=True))
         self.find_next_button=QPushButton('다음 찾기');self.find_next_button.clicked.connect(lambda:self.find_student(next_match=True))
+        self.reset_layout_button=QPushButton('배치 초기화');self.reset_layout_button.clicked.connect(self.reset_layout)
+        self.reset_layout_button.setToolTip('좌우 너비, 학생 표·평가 내용 높이, 열 너비를 기본값으로 되돌립니다.')
         self.search_result=QLabel()
-        search.addWidget(self.student_search,1);search.addWidget(self.find_next_button);search.addWidget(self.search_result)
+        search.addWidget(self.student_search,1);search.addWidget(self.find_next_button);search.addWidget(self.search_result);search.addWidget(self.reset_layout_button)
         layout.addLayout(search)
         selection=QHBoxLayout()
         self.select_all_button=QPushButton('전체 선택');self.select_all_button.clicked.connect(self.table.selectAll)
@@ -145,8 +149,14 @@ class QualitativeWindow(QWidget):
         self.clear_selection_button=QPushButton('선택 해제');self.clear_selection_button.clicked.connect(self.table.clearSelection)
         selection.addWidget(self.select_all_button);selection.addWidget(self.select_unreviewed_button);selection.addWidget(self.clear_selection_button)
         self.selection_info=QLabel();self.selection_info.setWordWrap(True);selection.addWidget(self.selection_info,1);layout.addLayout(selection)
-        layout.addWidget(self.table,1)
-        self.detail=QPlainTextEdit();self.detail.setReadOnly(True);layout.addWidget(self.detail,2)
+        self.detail=QPlainTextEdit();self.detail.setReadOnly(True)
+        self.review_splitter=QSplitter(Qt.Orientation.Vertical)
+        self.review_splitter.setChildrenCollapsible(False);self.review_splitter.setHandleWidth(8)
+        self.review_splitter.setToolTip('표와 평가 내용 사이 경계를 위아래로 드래그해 높이를 조절하세요.')
+        self.table.setMinimumHeight(100);self.detail.setMinimumHeight(100)
+        self.review_splitter.addWidget(self.table);self.review_splitter.addWidget(self.detail)
+        self.review_splitter.setStretchFactor(0,1);self.review_splitter.setStretchFactor(1,1)
+        layout.addWidget(self.review_splitter,3)
         final=QHBoxLayout();self.final_score=QDoubleSpinBox();self.final_score.setDecimals(2)
         final.addWidget(QLabel('교수자 확정 점수'));final.addWidget(self.final_score)
         self.confirm_button=QPushButton('현재 학생 점수 확정');self.confirm_button.clicked.connect(self.confirm)
@@ -173,6 +183,46 @@ class QualitativeWindow(QWidget):
         self.refresh_rows()
         self.table.selectAll()
         self.set_busy(False)
+        self.restore_layout()
+        self.main_splitter.splitterMoved.connect(self.save_layout)
+        self.review_splitter.splitterMoved.connect(self.save_layout)
+        self.table.horizontalHeader().sectionResized.connect(self.save_layout)
+
+    def default_layout(self):
+        self.main_splitter.setSizes([430,770])
+        self.review_splitter.setSizes([240,320])
+        header=self.table.horizontalHeader()
+        for column,minimum in enumerate((105,80,100,145,130,125)):
+            width=max(minimum,header.fontMetrics().horizontalAdvance(self.table.horizontalHeaderItem(column).text())+36)
+            self.table.setColumnWidth(column,width)
+
+    def restore_layout(self):
+        self.restoring_layout=True
+        self.default_layout()
+        for name,splitter in [('main',self.main_splitter),('review',self.review_splitter)]:
+            state=self.layout_settings.value('qualitative_layout/'+name)
+            if state is not None:
+                try:splitter.restoreState(state)
+                except (TypeError,ValueError):pass
+        widths=self.layout_settings.value('qualitative_layout/column_widths')
+        if isinstance(widths,(list,tuple)) and len(widths)==self.table.columnCount():
+            try:
+                values=[int(width) for width in widths]
+                if all(40<=width<=10000 for width in values):
+                    for column,width in enumerate(values):self.table.setColumnWidth(column,width)
+            except (TypeError,ValueError):pass
+        self.restoring_layout=False
+
+    def save_layout(self,*_):
+        if self.restoring_layout:return
+        self.layout_settings.setValue('qualitative_layout/main',self.main_splitter.saveState())
+        self.layout_settings.setValue('qualitative_layout/review',self.review_splitter.saveState())
+        self.layout_settings.setValue('qualitative_layout/column_widths',[self.table.columnWidth(i) for i in range(self.table.columnCount())])
+
+    def reset_layout(self):
+        self.restoring_layout=True
+        self.default_layout();self.layout_settings.remove('qualitative_layout')
+        self.restoring_layout=False
 
     @staticmethod
     def submission_key(context):
@@ -504,4 +554,4 @@ class QualitativeWindow(QWidget):
 
     def closeEvent(self,event):
         if self.worker and self.worker.isRunning():self.cancel();event.ignore()
-        else:event.accept()
+        else:self.layout_settings.sync();event.accept()

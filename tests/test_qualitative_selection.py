@@ -13,7 +13,7 @@ os.environ['QT_QPA_PLATFORM']='offscreen'
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 sys.path.insert(0, str(Path(__file__).resolve().parent)); import support  # noqa: E401,F401  isolates the SQLite store
 from PyQt6.QtWidgets import QApplication,QTableWidgetSelectionRange
-from PyQt6.QtCore import Qt,QItemSelectionModel,QPoint
+from PyQt6.QtCore import Qt,QItemSelectionModel,QPoint,QSettings
 from PyQt6.QtTest import QTest,QSignalSpy
 from qualitative import DEFAULT_RUBRIC,validate_review,confirm_review,load_reviews,save_reviews
 from qualitative_gui import QualitativeWindow
@@ -59,6 +59,60 @@ class QualitativeSelectionTests(unittest.TestCase):
         row.update({k:v for k,v in self.submissions[index].items() if k!='path'})
         row.update(status='ai_proposed',final_score=None,reviewer_note='')
         return row
+
+    def test_dragging_table_detail_and_column_boundaries_persists_and_resets_layout(self):
+        path=str(self.root/'layout.ini')
+        settings=QSettings(path,QSettings.Format.IniFormat)
+        with patch('qualitative_gui.QSettings',return_value=settings):
+            w=QualitativeWindow(self.submissions)
+        self.addCleanup(w.close)
+        w.show();self.app.processEvents()
+        initial_sizes=w.review_splitter.sizes();initial_width=w.table.columnWidth(0)
+        selected=w.selected_indices()
+        handle=w.review_splitter.handle(1);start=handle.rect().center()
+        QTest.mousePress(handle,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,start)
+        QTest.mouseMove(handle,start+QPoint(0,60),20)
+        QTest.mouseRelease(handle,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,start+QPoint(0,60))
+        self.app.processEvents()
+        self.assertGreater(w.review_splitter.sizes()[0],initial_sizes[0]+20)
+        self.assertGreaterEqual(w.review_splitter.sizes()[1],100)
+        header=w.table.horizontalHeader()
+        start=QPoint(header.sectionViewportPosition(0)+header.sectionSize(0)-1,header.height()//2)
+        QTest.mousePress(header.viewport(),Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,start)
+        QTest.mouseMove(header.viewport(),start+QPoint(40,0),20)
+        QTest.mouseRelease(header.viewport(),Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,start+QPoint(40,0))
+        self.app.processEvents()
+        self.assertGreater(w.table.columnWidth(0),initial_width+20)
+        sizes=w.review_splitter.sizes();width=w.table.columnWidth(0)
+        self.assertEqual(w.selected_indices(),selected)
+        w.close()
+        restored_settings=QSettings(path,QSettings.Format.IniFormat)
+        with patch('qualitative_gui.QSettings',return_value=restored_settings):
+            restored=QualitativeWindow(self.submissions)
+        self.addCleanup(restored.close)
+        restored.show();self.app.processEvents()
+        self.assertEqual(restored.table.columnWidth(0),width)
+        restored_sizes=restored.review_splitter.sizes()
+        self.assertAlmostEqual(restored_sizes[0]/sum(restored_sizes),sizes[0]/sum(sizes),places=2)
+        restored.refresh_rows();self.assertEqual(restored.table.columnWidth(0),width)
+        restored.table.sortItems(0,Qt.SortOrder.DescendingOrder)
+        restored.reset_layout_button.click()
+        self.assertEqual(restored.table.columnWidth(0),initial_width)
+        self.assertFalse(restored_settings.contains('qualitative_layout/review'))
+        self.assertFalse(restored_settings.contains('qualitative_layout/column_widths'))
+        self.assertEqual(restored.table.horizontalHeader().sortIndicatorOrder(),Qt.SortOrder.DescendingOrder)
+        self.assertEqual(restored.selected_indices(),selected)
+
+    def test_invalid_layout_preferences_fall_back_to_usable_defaults(self):
+        settings=QSettings(str(self.root/'bad-layout.ini'),QSettings.Format.IniFormat)
+        settings.setValue('qualitative_layout/review','invalid state')
+        settings.setValue('qualitative_layout/column_widths',['bad']*6)
+        with patch('qualitative_gui.QSettings',return_value=settings):
+            w=QualitativeWindow(self.submissions)
+        self.addCleanup(w.close)
+        w.show();self.app.processEvents()
+        self.assertTrue(all(size>=100 for size in w.review_splitter.sizes()))
+        self.assertTrue(all(w.table.columnWidth(i)>=40 for i in range(w.table.columnCount())))
 
     def test_header_sorting_keeps_student_selection_details_and_search_aligned(self):
         w=self.window
