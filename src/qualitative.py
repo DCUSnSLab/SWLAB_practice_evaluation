@@ -269,8 +269,12 @@ def load_reviews(path):
     if not isinstance(data,dict) or data.get('version') not in (1,2) or not isinstance(data.get('context'),dict) or not isinstance(data.get('results'),list):
         raise ValueError('정성평가 보고서 형식이 아닙니다.')
     for row in data['results']:
-        if not isinstance(row,dict) or row.get('status') not in ('error','ai_proposed','confirmed'):
+        if not isinstance(row,dict) or row.get('status') not in ('error','ai_proposed','confirmed','not_reviewed'):
             raise ValueError('잘못된 평가 행입니다.')
+        if row['status']=='not_reviewed':
+            if any(row.get(key) is not None for key in ('suggested_score','final_score')) or row.get('criteria'):
+                raise ValueError('미평가 학생은 평가 점수나 항목을 가질 수 없습니다.')
+            continue
         if row['status'] == 'error':
             continue
         for key in ('summary','reviewer_note'):

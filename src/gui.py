@@ -926,9 +926,6 @@ class Gui(QMainWindow):
         if not class_name or not selected:
             QMessageBox.information(self, '정성평가', '분반과 평가할 학생을 선택하세요.')
             return
-        if hasattr(self, 'qualitative_window') and self.qualitative_window.isVisible():
-            self.qualitative_window.raise_()
-            return
         chapter = self.comboChapter.currentText()
         problem = self.submissionProblem()
         if not chapter or chapter == '(No Files)':
@@ -948,6 +945,16 @@ class Gui(QMainWindow):
         submissions = [{**dict(class_name=class_name, student=item.text(), chapter=chapter, problem=problem,
                                path=str(safe_path(ORIGIN, class_name, item.text(), chapter, problem))), **extra}
                        for item in selected]
+        existing=getattr(self,'qualitative_window',None)
+        if existing is not None and existing.isVisible():
+            if existing.worker and existing.worker.isRunning():
+                existing.raise_()
+                existing.status.setText('정성평가가 진행 중입니다. 완료하거나 중지한 뒤 평가 대상을 바꾸세요.')
+                return
+            assignment=lambda s:tuple(s.get(k,'') for k in ('class_name','chapter','problem'))
+            if existing.submissions and assignment(existing.submissions[0])==assignment(submissions[0]):
+                existing.select_submissions(submissions);existing.raise_();return
+            existing.close()
         self.qualitative_window = QualitativeWindow(submissions, preset)
         self.qualitative_window.show()
 

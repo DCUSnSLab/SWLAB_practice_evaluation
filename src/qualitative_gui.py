@@ -40,8 +40,10 @@ class QualitativeWindow(QWidget):
         self.preset = preset or {}
         self.setWindowTitle('Qwen 정성평가'+(' · '+self.preset['title'] if self.preset.get('title') else ''))
         self.resize(1200,850)
-        self.submissions = submissions
-        self.rows = []
+        self.submissions = deepcopy(submissions)
+        self.rows = [self.unreviewed_row(s) for s in submissions]
+        self.completed_count = 0
+        self.cancel_requested = False
         self.context = {}
         self.worker = None
         self.archive = None
@@ -62,7 +64,8 @@ class QualitativeWindow(QWidget):
         root.addLayout(server)
         patterns=next((s['sources'] for s in submissions if s.get('sources')),None)
         scope=f'지정 파일({", ".join(patterns)})과' if patterns else '선택 문제의 소스와'
-        root.addWidget(QLabel(f'선택 학생 {len(submissions)}명 · {scope} 요구사항·평가기준을 위 서버에 전송합니다. 학번 매핑은 로컬에 보관합니다.'))
+        self.source_scope=scope
+        self.scope_label=QLabel();self.scope_label.setWordWrap(True);root.addWidget(self.scope_label)
         material=QHBoxLayout()
         self.slide_selection=None
         self.load_problem_button=QPushButton('슬라이드 목록에서 문제 선택…');self.load_problem_button.clicked.connect(self.load_problem)
@@ -144,7 +147,51 @@ class QualitativeWindow(QWidget):
         for button in (self.start_button,self.cancel_button,self.export_button,self.open_button):actions.addWidget(button)
         self.progress=QProgressBar();actions.addWidget(self.progress);root.addLayout(actions)
         self.status=QLabel(config_error or 'AI 평가를 제안으로 저장합니다. 학생을 선택해 근거를 검토하고 최종 점수를 확정하세요.');self.status.setWordWrap(True);root.addWidget(self.status)
+        self.refresh_rows()
+        self.table.selectAll()
         self.set_busy(False)
+
+    @staticmethod
+    def submission_key(context):
+        return tuple(str(context.get(key,'')) for key in ('class_name','student','chapter','problem'))
+
+    @staticmethod
+    def unreviewed_row(context):
+        return {**{k:v for k,v in context.items() if k!='path'},'status':'not_reviewed',
+                'suggested_score':None,'final_score':None}
+
+    def select_submissions(self,submissions):
+        """Reflect a new main-window selection without discarding existing reviews."""
+        if self.worker and self.worker.isRunning():return
+        available={self.submission_key(s):i for i,s in enumerate(self.submissions)}
+        row_keys={self.submission_key(row) for row in self.rows}
+        keys={self.submission_key(s) for s in submissions}
+        for submission in submissions:
+            key=self.submission_key(submission)
+            if key in available:self.submissions[available[key]]=deepcopy(submission)
+            else:
+                available[key]=len(self.submissions);self.submissions.append(deepcopy(submission))
+            if key not in row_keys:
+                self.rows.append(self.unreviewed_row(submission));row_keys.add(key)
+        self.refresh_rows()
+        with QSignalBlocker(self.table):
+            self.table.clearSelection()
+            for i,row in enumerate(self.rows):
+                if self.submission_key(row) in keys:
+                    self.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,self.table.columnCount()-1),True)
+        self.selection_changed()
+
+    def selected_submissions(self):
+        indices=self.selected_indices()
+        if not indices:raise ValueError('정성평가할 학생을 표에서 선택하세요.')
+        available={self.submission_key(s):s for s in self.submissions}
+        selected=[]
+        for i in indices:
+            key=self.submission_key(self.rows[i])
+            if key not in available:
+                raise ValueError('선택한 학생의 로컬 제출 경로가 없습니다. 메인 화면에서 해당 학생과 문제를 선택해 다시 여세요.')
+            selected.append(deepcopy(available[key]))
+        return selected
 
     def set_busy(self,busy):
         for widget in (self.start_button,self.problem_text,self.rubric_table,self.load_problem_button,self.url,self.model,self.open_button,self.note,self.final_score,
@@ -161,6 +208,9 @@ class QualitativeWindow(QWidget):
         indices=self.selected_indices()
         pending=sum(self.rows[i]['status']=='ai_proposed' for i in indices)
         self.selection_info.setText(f'전체 {len(self.rows)}명 · 선택 {len(indices)}명 · 미확정 {pending}명')
+        self.scope_label.setText(f'평가 선택 {len(indices)}명 · {self.source_scope} 요구사항·평가기준을 위 서버에 전송합니다. 학번 매핑은 로컬에 보관합니다.')
+        self.start_button.setText(f'선택 {len(indices)}명 일괄 정성평가')
+        self.start_button.setEnabled(not busy and bool(indices) and bool(self.submissions))
         self.batch_confirm_button.setText(f'선택 학생 일괄 승인 ({pending}명)')
         self.batch_confirm_button.setEnabled(not busy and pending>0)
         current=self.table.currentRow()
@@ -211,17 +261,19 @@ class QualitativeWindow(QWidget):
         return validate_rubric(rules)
 
     def start(self):
+        if self.worker and self.worker.isRunning():return
         try:
+            submissions=self.selected_submissions()
             rules=self.read_rubric();problem=self.problem_text.toPlainText()
             validate_dcucode_rubric(rules)
             if not problem.strip() or len(problem)>30000:raise ValueError('문제 요구사항을 1–30,000자로 입력하세요.')
-            if not self.submissions:raise ValueError('메인 화면에서 평가할 학생을 선택하세요.')
             client=LLMClient(self.url.text().strip(),self.model.text().strip())
         except (ValueError,AttributeError) as error:
             self.status.setText(str(error));return
-        self.rows=[];self.table.setRowCount(0);self.detail.clear();self.note.clear()
+        self.completed_count=0
+        self.cancel_requested=False
         self.archive=ROOT/'reports'/f'qualitative_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:6]}.json'
-        self.context={'problem':problem,'rubric':rules,'submissions':[{k:v for k,v in s.items() if k!='path'} for s in self.submissions],
+        self.context={'problem':problem,'rubric':rules,'submissions':[{k:v for k,v in s.items() if k!='path'} for s in submissions],
                       'model':client.model,'endpoint':client.base_url,'run_state':'running',
                       'scoring_version':SCORING_VERSION,'problem_points':self.problem_points.value(),
                       'resource_policy':self.resource_policy()}
@@ -229,8 +281,8 @@ class QualitativeWindow(QWidget):
         if self.preset.get('title'):self.context['preset']={k:self.preset[k] for k in ('title','points') if k in self.preset}
         try:save_reviews(self.archive,self.rows,self.context)
         except OSError as error:self.status.setText(f'자동 저장 실패: {error}');return
-        self.progress.setRange(0,len(self.submissions));self.progress.setValue(0)
-        self.worker=ReviewWorker(client,problem,rules,self.submissions,self,
+        self.progress.setRange(0,len(submissions));self.progress.setValue(0)
+        self.worker=ReviewWorker(client,problem,rules,submissions,self,
             options=dict(total_score=self.problem_points.value(),resource_policy=self.resource_policy()))
         self.worker.row_ready.connect(self.add_row)
         self.worker.failed.connect(self.worker_error)
@@ -239,12 +291,18 @@ class QualitativeWindow(QWidget):
         self.worker.start()
 
     def add_row(self,row):
-        self.rows.append(row);self.refresh_rows();self.progress.setValue(len(self.rows))
+        key=self.submission_key(row)
+        for i,existing in enumerate(self.rows):
+            if self.submission_key(existing)==key:
+                self.rows[i]=row;break
+        else:self.rows.append(row)
+        self.completed_count+=1
+        self.refresh_rows();self.progress.setValue(self.completed_count)
         self.persist()
 
     def refresh_rows(self):
         selected=self.selected_indices();current=self.table.currentRow();old_count=self.table.rowCount()
-        labels={'ai_proposed':'AI 제안','confirmed':'교수자 확정','error':'평가 실패'}
+        labels={'ai_proposed':'AI 제안','confirmed':'교수자 확정','error':'평가 실패','not_reviewed':'미평가'}
         with QSignalBlocker(self.table):
             self.table.setRowCount(len(self.rows))
             for i,row in enumerate(self.rows):
@@ -266,7 +324,7 @@ class QualitativeWindow(QWidget):
         except OSError as error:self.status.setText(f'자동 저장 실패(화면 결과는 유지): {error}')
 
     def finished(self):
-        self.context['run_state']='error' if self.context.get('error') else ('cancelled' if self.worker.isInterruptionRequested() else 'finished')
+        self.context['run_state']='error' if self.context.get('error') else ('cancelled' if self.cancel_requested else 'finished')
         self.set_busy(False);self.persist()
 
     def worker_error(self,text):
@@ -274,12 +332,17 @@ class QualitativeWindow(QWidget):
         self.status.setText('평가 오류: '+text)
 
     def cancel(self):
-        if self.worker:self.worker.requestInterruption();self.status.setText('현재 학생의 응답을 받은 후 중지합니다.')
+        if self.worker and self.worker.isRunning():
+            self.cancel_requested=True
+            self.worker.requestInterruption();self.status.setText('현재 학생의 응답을 받은 후 중지합니다.')
 
     def show_selected(self):
         index=self.table.currentRow()
         if not 0<=index<len(self.rows):return
         row=self.rows[index]
+        if row['status']=='not_reviewed':
+            self.detail.setPlainText('아직 정성평가하지 않은 학생입니다. 표에서 평가할 학생을 선택하고 일괄 정성평가를 누르세요.')
+            self.confirm_button.setEnabled(False);return
         if row['status']=='error':self.detail.setPlainText(row.get('message',''));self.confirm_button.setEnabled(False);return
         parts=[row['summary']]
         if row.get('scoring_version') == SCORING_VERSION:

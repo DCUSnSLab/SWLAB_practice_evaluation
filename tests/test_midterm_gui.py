@@ -215,6 +215,26 @@ class MidtermGuiTests(unittest.TestCase):
         self.assertIsNone(preset)
         self.assertNotIn('sources', submissions[0])
 
+    def test_reopening_qualitative_syncs_current_main_selection(self):
+        w=self.window
+        w.comboProblem.setCurrentIndex(w.comboProblem.findData('copy.c'))
+        w.listStudents.clearSelection();w.listStudents.item(0).setSelected(True)
+        w.openQualitative();original=w.qualitative_window
+        self.addCleanup(original.close)
+        self.assertEqual([r['student'] for r in original.rows],['101'])
+        w.listStudents.clearSelection();w.listStudents.item(1).setSelected(True)
+        w.openQualitative()
+        self.assertIs(w.qualitative_window,original)
+        self.assertEqual([original.rows[i]['student'] for i in original.selected_indices()],['102'])
+        self.assertEqual(original.start_button.text(),'선택 1명 일괄 정성평가')
+        w.comboProblem.setCurrentIndex(w.comboProblem.findData('bookquery.c'))
+        w.openQualitative();changed=w.qualitative_window
+        self.addCleanup(changed.close)
+        self.assertIsNot(changed,original)
+        self.assertFalse(original.isVisible())
+        self.assertEqual(changed.submissions[0]['problem'],'bookquery.c')
+        self.assertEqual(changed.rows[0]['student'],'102')
+
     @unittest.skipUnless(os.environ.get('SWLAB_TEST_DOCKER') == '1', 'Set SWLAB_TEST_DOCKER=1')
     def test_docker_gui_grades_all_36_cases_from_flat_midterm(self):
         w = self.window
