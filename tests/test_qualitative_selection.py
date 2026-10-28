@@ -27,6 +27,7 @@ class QualitativeSelectionTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)
+        support.isolate(self)
         config=patch.dict(os.environ,{'SWLAB_LLM_URL':'https://example.invalid/v1','SWLAB_LLM_MODEL':'test-model'})
         config.start();self.addCleanup(config.stop)
         root=patch('qualitative_gui.ROOT',self.root);root.start();self.addCleanup(root.stop)
@@ -40,6 +41,38 @@ class QualitativeSelectionTests(unittest.TestCase):
         self.window=QualitativeWindow(self.submissions)
         self.addCleanup(self.window.close)
         self.window.problem_text.setPlainText('정수를 화면에 출력한다.')
+
+    def test_saved_batches_are_listed_for_the_scope_and_reload_from_the_database(self):
+        import db
+        from qualitative import archive_reviews
+        from qualitative_gui import QualitativeWindow
+        w=self.window
+        self.assertEqual(w.run_combo.count(),1)
+        with patch('llm_cases.LLMClient._request',return_value=self.payload):
+            self.select(0,1);w.start();self.finish()
+        first=w.archive.stem
+        self.assertEqual([w.run_combo.itemData(i) for i in range(w.run_combo.count())],[None,first])
+        self.assertIn('완료 · 3명 (확정 0)',w.run_combo.currentText())
+        w.table.setCurrentCell(0,0);self.select(0);w.final_score.setValue(40);w.note.setPlainText('확인');w.confirm()
+        self.assertIn('(확정 1)',w.run_combo.currentText())
+        self.assertEqual(db.load_qualitative(first)['results'][0]['final_score'],40)
+        other=self.root/'reports'/'qualitative_20260101_000000_abcdef.json'
+        archive_reviews(other,[dict(self.submissions[2],status='not_reviewed',suggested_score=None,final_score=None)],
+                        {'problem':'다른 문제','submissions':[{k:v for k,v in self.submissions[2].items() if k!='path'}],'run_state':'finished'})
+        archive_reviews(self.root/'reports'/'qualitative_20260102_000000_abcdef.json',[],
+                        {'submissions':[dict(class_name='python_1_2026',chapter='chap1',problem='prob1')],'run_state':'finished'})
+        w.archive.unlink();other.unlink()
+        reopened=QualitativeWindow(self.submissions);self.addCleanup(reopened.close)
+        self.assertEqual([reopened.run_combo.itemData(i) for i in range(reopened.run_combo.count())],[None,other.stem,first])
+        reopened.run_combo.setCurrentIndex(reopened.run_combo.findData(first));reopened.load_saved_run()
+        self.assertEqual(reopened.archive.stem,first)
+        self.assertEqual([r['status'] for r in reopened.rows],['confirmed','ai_proposed','not_reviewed'])
+        self.assertEqual(reopened.table.item(0,5).text(),'40.0')
+        self.assertEqual(reopened.problem_text.toPlainText(),'정수를 화면에 출력한다.')
+        self.assertIn('DB에서 평가 기록을 불러왔습니다',reopened.status.text())
+        reopened.run_combo.setCurrentIndex(reopened.run_combo.findData(other.stem));reopened.load_saved_run()
+        self.assertEqual(reopened.problem_text.toPlainText(),'다른 문제')
+        self.assertEqual(len(reopened.rows),1)
 
     def select(self,*indices):
         self.window.table.clearSelection()

@@ -944,15 +944,16 @@ class Gui(QMainWindow):
         self.showSavedRun(report, document)
 
     def importReports(self):
-        """Load run.json folders written before the database existed."""
+        """Load run.json folders and qualitative_*.json files written before the database existed."""
         import db
         try:
-            imported = db.import_reports()
+            runs = db.import_reports()
+            reviews = db.import_qualitative()
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, '기록 가져오기 실패', str(exc))
             return
         self.refreshRunList()
-        QMessageBox.information(self, '기록 가져오기', f'{len(imported)}개 실행을 DB에 추가했습니다.\n{db.default_path()}')
+        QMessageBox.information(self, '기록 가져오기', f'채점 {len(runs)}개 · 정성평가 {len(reviews)}개 실행을 DB에 추가했습니다.\n{db.default_path()}')
 
     def recordReview(self):
         students = [item.text() for item in self.listStudents.selectedItems()]

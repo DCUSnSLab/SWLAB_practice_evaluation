@@ -15,7 +15,8 @@ from slide_picker import SlidePicker
 from paths import ROOT
 from student_names import fill_student_names
 from table_items import SortableItem, student_sort_value
-from qualitative import DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,confirm_reviews,save_reviews,load_reviews
+from qualitative import (DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,confirm_reviews,save_reviews,load_reviews,
+    archive_reviews,load_saved_reviews)
 from qualitative_rubric import (SCORING_VERSION, RESOURCE_IDS, resource_scope,
     validate_dcucode_rubric)
 
@@ -175,12 +176,17 @@ class QualitativeWindow(QWidget):
         self.start_button=QPushButton('선택 학생 일괄 정성평가');self.start_button.clicked.connect(self.start)
         self.cancel_button=QPushButton('현재 학생 완료 후 중지');self.cancel_button.clicked.connect(self.cancel)
         self.export_button=QPushButton('CSV / JSON 저장');self.export_button.clicked.connect(self.export)
-        self.open_button=QPushButton('저장된 평가 열기');self.open_button.clicked.connect(self.open_report)
-        for button in (self.start_button,self.cancel_button,self.export_button,self.open_button):actions.addWidget(button)
+        self.open_button=QPushButton('JSON 파일 열기');self.open_button.clicked.connect(self.open_report)
+        self.open_button.setToolTip('다른 PC에서 가져온 qualitative_*.json 을 엽니다. 연 기록은 DB에도 저장됩니다.')
+        self.run_combo=QComboBox();self.run_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.run_combo.activated.connect(lambda index:self.load_saved_run())
+        for button in (self.start_button,self.cancel_button,self.export_button):actions.addWidget(button)
+        actions.addWidget(self.run_combo);actions.addWidget(self.open_button)
         self.progress=QProgressBar();actions.addWidget(self.progress);root.addLayout(actions)
         self.status=QLabel(config_error or 'AI 평가를 제안으로 저장합니다. 학생을 선택해 근거를 검토하고 최종 점수를 확정하세요.');self.status.setWordWrap(True);root.addWidget(self.status)
         self.table.model().layoutChanged.connect(self.table_order_changed)
         self.refresh_rows()
+        self.refresh_run_list()
         self.table.selectAll()
         self.set_busy(False)
         self.restore_layout()
@@ -411,7 +417,7 @@ class QualitativeWindow(QWidget):
                       'resource_policy':self.resource_policy()}
         self.context['slide_selection']={k:v for k,v in (self.slide_selection or {}).items() if k!='text'}
         if self.preset.get('title'):self.context['preset']={k:self.preset[k] for k in ('title','points') if k in self.preset}
-        try:save_reviews(self.archive,self.rows,self.context)
+        try:archive_reviews(self.archive,self.rows,self.context)
         except OSError as error:self.status.setText(f'자동 저장 실패: {error}');return
         self.progress.setRange(0,len(submissions));self.progress.setValue(0)
         self.worker=ReviewWorker(client,problem,rules,submissions,self,
@@ -464,9 +470,40 @@ class QualitativeWindow(QWidget):
 
     def persist(self):
         try:
-            save_reviews(self.archive,self.rows,self.context)
-            self.status.setText(f'{len(self.rows)}명 평가 기록 · 자동 저장: {self.archive}')
+            archive_reviews(self.archive,self.rows,self.context)
+            self.status.setText(f'{len(self.rows)}명 평가 기록 · DB 저장 · 내보내기: {self.archive}')
         except OSError as error:self.status.setText(f'자동 저장 실패(화면 결과는 유지): {error}')
+        self.refresh_run_list()
+
+    def run_scope(self):
+        """class / chapter / problem this window was opened for; saved batches are listed for the same scope."""
+        first=next((s for s in self.submissions if s.get('class_name')),None) or {}
+        return first.get('class_name'),first.get('chapter'),first.get('problem')
+
+    def refresh_run_list(self):
+        import db
+        combo=self.run_combo
+        current=self.archive.stem if self.archive else None
+        with QSignalBlocker(combo):
+            combo.clear();combo.addItem('저장된 평가 선택…',None)
+            try:runs=db.list_qualitative(*self.run_scope())
+            except Exception as error:runs=[];self.status.setText('저장된 평가 목록을 읽지 못했습니다: '+str(error))
+            states={'finished':'완료','cancelled':'중지됨','running':'진행 중','error':'오류'}
+            for run in runs:
+                try:stamp=datetime.fromisoformat(run['created_at']).astimezone().strftime('%Y-%m-%d %H:%M')
+                except (TypeError,ValueError):stamp=run['id']
+                combo.addItem(f"{stamp} · {run['problem'] or '문제 없음'} · {states.get(run['state'],run['state'] or '')} · "
+                              f"{run['student_count']}명 (확정 {run['confirmed']})",run['id'])
+            if current is not None and combo.findData(current)>=0:combo.setCurrentIndex(combo.findData(current))
+        combo.setToolTip(f'같은 분반·문제의 저장된 정성평가 {len(runs)}개 · 선택하면 제안·확정 점수와 근거를 다시 불러옵니다.')
+
+    def load_saved_run(self):
+        run_id=self.run_combo.currentData()
+        if not run_id or (self.worker and self.worker.isRunning()) or (self.archive and self.archive.stem==run_id):return
+        try:data=load_saved_reviews(run_id)
+        except (ValueError,TypeError) as error:self.status.setText('불러오기 실패: '+str(error));return
+        self.show_report(data,Path(data.get('archive') or ROOT/'reports'/f'{run_id}.json'))
+        self.status.setText('DB에서 평가 기록을 불러왔습니다. 검토 후 확정할 수 있습니다.')
 
     def finished(self):
         self.context['run_state']='error' if self.context.get('error') else ('cancelled' if self.cancel_requested else 'finished')
@@ -539,18 +576,26 @@ class QualitativeWindow(QWidget):
         if not path:return
         try:
             data=load_reviews(path)
-            rules=validate_rubric(data['context'].get('rubric',deepcopy(DEFAULT_RUBRIC)))
-            self.rows=data['results'];fill_student_names(self.rows)
-            self.context=data['context'];self.archive=Path(path)
-            self.problem_text.setPlainText(str(self.context.get('problem','')))
-            self.rubric=deepcopy(rules)
-            self.populate_rubric()
-            self.problem_points.setValue(int(self.context.get('problem_points',100)))
-            for kind,combo in self.resource_modes.items():
-                combo.setCurrentIndex(combo.findData(self.context.get('resource_policy',{}).get(kind,'auto')))
-            self.refresh_resource_info()
-            self.refresh_rows();self.set_busy(False);self.status.setText('평가 기록을 불러왔습니다. 검토 후 확정할 수 있습니다.')
+            self.show_report(data,Path(path))
+            import db
+            db.save_qualitative(self.archive.stem,self.context,self.rows,data['version'],self.archive)
+            self.refresh_run_list()
+            self.status.setText('평가 기록을 불러와 DB에 저장했습니다. 검토 후 확정할 수 있습니다.')
         except (OSError,ValueError,TypeError) as error:self.status.setText('불러오기 실패: '+str(error))
+
+    def show_report(self,data,archive):
+        rules=validate_rubric(data['context'].get('rubric',deepcopy(DEFAULT_RUBRIC)))
+        self.rows=data['results'];fill_student_names(self.rows)
+        self.context=data['context'];self.archive=archive
+        self.problem_text.setPlainText(str(self.context.get('problem','')))
+        self.rubric=deepcopy(rules)
+        self.populate_rubric()
+        self.problem_points.setValue(int(self.context.get('problem_points',100)))
+        for kind,combo in self.resource_modes.items():
+            combo.setCurrentIndex(combo.findData(self.context.get('resource_policy',{}).get(kind,'auto')))
+        self.refresh_resource_info()
+        self.refresh_rows();self.set_busy(False)
+        self.refresh_run_list()
 
     def closeEvent(self,event):
         if self.worker and self.worker.isRunning():self.cancel();event.ignore()

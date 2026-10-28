@@ -67,7 +67,35 @@ class ScoreOverride(BaseModel):
     at = CharField()
 
 
-MODELS = [Roster, GradingRun, CaseResult, ScoreOverride]
+class QualitativeRun(BaseModel):
+    """A Qwen qualitative review batch; `id` is the archive stem (qualitative_<time>_<hex>)."""
+    id = CharField(primary_key=True)
+    class_name = CharField(null=True, index=True)
+    chapter = CharField(null=True)
+    problem = CharField(null=True)
+    model = CharField(null=True)
+    state = CharField(null=True)
+    version = IntegerField(default=2)
+    created_at = CharField(null=True)
+    updated_at = CharField()
+    archive = CharField(null=True)
+    context = TextField()
+
+
+class QualitativeReview(BaseModel):
+    run = ForeignKeyField(QualitativeRun, backref='reviews', on_delete='CASCADE')
+    position = IntegerField()
+    student = CharField(index=True)
+    student_name = CharField(default='')
+    status = CharField()
+    overall = DoubleField(null=True)
+    suggested_score = DoubleField(null=True)
+    max_score = DoubleField(null=True)
+    final_score = DoubleField(null=True)
+    data = TextField()
+
+
+MODELS = [Roster, GradingRun, CaseResult, ScoreOverride, QualitativeRun, QualitativeReview]
 
 
 def default_path():
@@ -217,8 +245,8 @@ def import_reports(root=None):
     """Load run.json archives that are not in the database yet; returns the imported run IDs."""
     import paths
     root = Path(root or paths.ROOT / 'reports' / 'case-grading')
-    with session():
-        known = {run.id for run in GradingRun.select(GradingRun.id)}
+    with session():  # a run still marked running was captured mid-way: read its file again
+        known = {run.id for run in GradingRun.select(GradingRun.id).where(GradingRun.state != 'running')}
     imported = []
     for path in sorted(root.glob('*/run.json')) if root.is_dir() else []:
         run_id = path.parent.name
@@ -239,16 +267,110 @@ def import_reports(root=None):
     return imported
 
 
+# --- qualitative reviews ----------------------------------------------------
+
+def _review_scope(context, rows):
+    """class / chapter / problem of a review batch, from its submissions or its rows."""
+    for item in [*context.get('submissions', []), *rows]:
+        if isinstance(item, dict) and item.get('class_name'):
+            return item.get('class_name'), item.get('chapter'), item.get('problem')
+    return None, None, None
+
+
+def save_qualitative(run_id, context, rows, version=2, archive=None, created_at=None):
+    """Upsert a review batch and replace its per-student rows in one transaction."""
+    stamp = now()
+    class_name, chapter, problem = _review_scope(context, rows)
+    with session(), database.atomic():
+        values = dict(class_name=class_name, chapter=chapter, problem=problem, model=context.get('model'),
+                      state=context.get('run_state'), version=version, updated_at=stamp,
+                      archive=str(archive) if archive else None, context=dumps(context))
+        if QualitativeRun.get_or_none(QualitativeRun.id == run_id) is None:
+            QualitativeRun.create(id=run_id, created_at=created_at or stamp, **values)
+        else:
+            QualitativeRun.update(**values).where(QualitativeRun.id == run_id).execute()
+        QualitativeReview.delete().where(QualitativeReview.run == run_id).execute()
+        def number(value):
+            return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+        reviews = [dict(run=run_id, position=index, student=str(row.get('student', '')),
+                        student_name=row.get('student_name') or '', status=str(row.get('status', '')),
+                        overall=number(row.get('overall')), suggested_score=number(row.get('suggested_score')),
+                        max_score=number(row.get('max_score')), final_score=number(row.get('final_score')), data=dumps(row))
+                   for index, row in enumerate(rows)]
+        for start in range(0, len(reviews), 200):
+            QualitativeReview.insert_many(reviews[start:start + 200]).execute()
+
+
+def load_qualitative(run_id):
+    """The review batch as the qualitative JSON document, or None when unknown."""
+    with session():
+        run = QualitativeRun.get_or_none(QualitativeRun.id == run_id)
+        if run is None:
+            return None
+        rows = [json.loads(review.data) for review in
+                QualitativeReview.select().where(QualitativeReview.run == run_id).order_by(QualitativeReview.position)]
+    return {'version': run.version, 'context': json.loads(run.context), 'results': rows,
+            'archive': run.archive, 'created_at': run.created_at, 'updated_at': run.updated_at}
+
+
+def list_qualitative(class_name=None, chapter=None, problem=None, limit=100):
+    """Most recent review batches first with status counts for labels."""
+    query = QualitativeRun.select()
+    for field, value in ((QualitativeRun.class_name, class_name), (QualitativeRun.chapter, chapter), (QualitativeRun.problem, problem)):
+        if value:
+            query = query.where(field == value)
+    query = query.order_by(QualitativeRun.created_at.desc(), QualitativeRun.id.desc()).limit(limit)
+    runs = []
+    with session():
+        for run in query:
+            reviews = QualitativeReview.select().where(QualitativeReview.run == run.id)
+            runs.append(dict(id=run.id, class_name=run.class_name, chapter=run.chapter, problem=run.problem,
+                             model=run.model, state=run.state, version=run.version, created_at=run.created_at,
+                             updated_at=run.updated_at, archive=run.archive, student_count=reviews.count(),
+                             confirmed=reviews.where(QualitativeReview.status == 'confirmed').count(),
+                             proposed=reviews.where(QualitativeReview.status == 'ai_proposed').count(),
+                             failed=reviews.where(QualitativeReview.status == 'error').count()))
+    return runs
+
+
+def import_qualitative(root=None):
+    """Load qualitative_*.json archives not yet in the database; returns the imported run IDs."""
+    import paths
+    root = Path(root or paths.ROOT / 'reports')
+    with session():  # a batch still marked running was captured mid-way: read its file again
+        known = {run.id for run in QualitativeRun.select(QualitativeRun.id).where(QualitativeRun.state != 'running')}
+    imported = []
+    for path in sorted(root.glob('qualitative_*.json')) if root.is_dir() else []:
+        if path.stem in known:
+            continue
+        try:
+            document = json.loads(path.read_text(encoding='utf-8-sig'))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(document, dict) or document.get('version') not in (1, 2):
+            continue
+        if not isinstance(document.get('context'), dict) or not isinstance(document.get('results'), list):
+            continue
+        created = next((row.get('created_at') for row in document['results']
+                        if isinstance(row, dict) and isinstance(row.get('created_at'), str)), None)
+        save_qualitative(path.stem, document['context'], document['results'], document['version'], path,
+                         created or datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat())
+        imported.append(path.stem)
+    return imported
+
+
 def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description='SWLAB SQLite store')
     commands = parser.add_subparsers(dest='command', required=True)
-    load = commands.add_parser('import', help='reports/case-grading 의 run.json 을 DB로 가져오기')
-    load.add_argument('--root', type=Path, help='run.json 폴더들의 상위 경로 (기본: reports/case-grading)')
+    load = commands.add_parser('import', help='reports 의 run.json 과 qualitative_*.json 을 DB로 가져오기')
+    load.add_argument('--root', type=Path, help='reports 폴더 경로 (기본: reports)')
     commands.add_parser('runs', help='저장된 채점 실행 목록')
+    commands.add_parser('reviews', help='저장된 정성평가 실행 목록')
     options = parser.parse_args(argv)
     if options.command == 'import':
-        imported = import_reports(options.root)
+        root = options.root
+        imported = import_reports(root / 'case-grading' if root else None) + import_qualitative(root)
         print(f'{len(imported)}개 실행을 가져왔습니다 -> {default_path()}')
         for run_id in imported:
             print('  ' + run_id)
@@ -256,6 +378,10 @@ def main(argv=None):
         for run in list_runs():
             print(f"{run['id']}  {run['class_name']}  {run['chapter']}/{run['problem']}  {run['state']}  "
                   f"학생 {run['student_count']}명 · 결과 {run['result_count']}건")
+    elif options.command == 'reviews':
+        for run in list_qualitative():
+            print(f"{run['id']}  {run['class_name']}  {run['chapter']}/{run['problem']}  {run['state']}  "
+                  f"학생 {run['student_count']}명 · 확정 {run['confirmed']}명 · 제안 {run['proposed']}명 · 실패 {run['failed']}명")
 
 
 if __name__ == '__main__':

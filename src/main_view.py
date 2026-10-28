@@ -194,7 +194,7 @@ def build_main_view(w):
 
     advanced = w.menuBar().addMenu('도구 / 고급')
     advanced.addAction('CSV / JSON 내보내기…').triggered.connect(w.exportResults)
-    w.actionImportReports = advanced.addAction('이전 run.json 기록을 DB로 가져오기'); w.actionImportReports.triggered.connect(w.importReports)
+    w.actionImportReports = advanced.addAction('이전 채점·정성평가 기록을 DB로 가져오기'); w.actionImportReports.triggered.connect(w.importReports)
     w.actionManifestGrading = advanced.addAction('명세 파일로 배점 채점…'); w.actionManifestGrading.triggered.connect(w.openProblemGrading)
     for name, text, handler in [('btnMaterials', '실습 자료 보기', w.openMaterials), ('btnMaker', '기준 코드로 케이스 만들기', w.openMaker), ('btnReview', '수동 평가 기록', w.recordReview)]:
         action = advanced.addAction(text); action.triggered.connect(handler); setattr(w, name, action)

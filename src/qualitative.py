@@ -259,13 +259,36 @@ def save_reviews(path, rows, context, *, csv_detail=False):
                 for flat in records:
                     writer.writerow({k:("'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\t','\r')) else v) for k,v in flat.items()})
     else:
-        version = 2 if context.get('scoring_version') == SCORING_VERSION or any(r.get('scoring_version') == SCORING_VERSION for r in rows) else 1
-        temporary.write_text(json.dumps({'version':version,'context':context,'results':rows},ensure_ascii=False,indent=2),encoding='utf-8')
+        temporary.write_text(json.dumps({'version':report_version(rows, context),'context':context,'results':rows},ensure_ascii=False,indent=2),encoding='utf-8')
     temporary.replace(path)
 
 
+def report_version(rows, context):
+    return 2 if context.get('scoring_version') == SCORING_VERSION or any(r.get('scoring_version') == SCORING_VERSION for r in rows) else 1
+
+
+def archive_reviews(path, rows, context):
+    """Automatic save of a review batch: the SQLite store is authoritative, the JSON file is the export."""
+    import db
+    path = Path(path)
+    db.save_qualitative(path.stem, context, rows, report_version(rows, context), path)
+    save_reviews(path, rows, context)
+
+
+def load_saved_reviews(run_id):
+    """A review batch from the SQLite store, validated like a JSON report."""
+    import db
+    data = db.load_qualitative(run_id)
+    if data is None:
+        raise ValueError('저장된 정성평가를 찾을 수 없습니다: ' + str(run_id))
+    return validate_report(data)
+
+
 def load_reviews(path):
-    data = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    return validate_report(json.loads(Path(path).read_text(encoding='utf-8-sig')))
+
+
+def validate_report(data):
     if not isinstance(data,dict) or data.get('version') not in (1,2) or not isinstance(data.get('context'),dict) or not isinstance(data.get('results'),list):
         raise ValueError('정성평가 보고서 형식이 아닙니다.')
     for row in data['results']:

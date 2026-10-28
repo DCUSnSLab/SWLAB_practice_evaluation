@@ -81,6 +81,69 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(db.load_run('20260102_000000_bbbbbbbb')['results'], self.rows)
         self.assertEqual([r['id'] for r in db.list_runs()], ['20260102_000000_bbbbbbbb', '20260101_000000_aaaaaaaa'])
 
+    def review_rows(self):
+        from qualitative import DEFAULT_RUBRIC
+        criteria = [dict(id=r['id'], name=r['name'], score=5, max_score=10, reason='확인', evidence=[]) for r in DEFAULT_RUBRIC]
+        proposed = dict(class_name='system_1_2026', student='101', student_name='첫 학생', chapter='chap3', problem='p1',
+                        status='ai_proposed', summary='요약', strengths=[], improvements=[], uncertainties=[], criteria=criteria,
+                        suggested_score=35, max_score=70, final_score=None, reviewer_note='', created_at='2026-10-27T07:03:30+00:00')
+        confirmed = dict(proposed, student='102', student_name='', status='confirmed', final_score=30, reviewer_note='확정')
+        failed = dict(class_name='system_1_2026', student='103', chapter='chap3', problem='p1', status='error',
+                      message='파일 없음', suggested_score=None, final_score=None)
+        return [proposed, confirmed, failed]
+
+    def test_qualitative_batches_round_trip_and_list_with_counts(self):
+        rows = self.review_rows()
+        context = {'problem': '정수 출력', 'rubric': [], 'submissions': [dict(class_name='system_1_2026', student='101', chapter='chap3', problem='p1')],
+                   'model': 'qwen', 'run_state': 'running'}
+        db.save_qualitative('qualitative_20261027_160320_5b98c4', context, rows[:1], 1, self.root / 'a.json', '2026-10-27T07:00:00+00:00')
+        context['run_state'] = 'finished'
+        db.save_qualitative('qualitative_20261027_160320_5b98c4', context, rows, 1, self.root / 'a.json')
+        document = db.load_qualitative('qualitative_20261027_160320_5b98c4')
+        self.assertEqual((document['version'], document['results'], document['context']['run_state']), (1, rows, 'finished'))
+        self.assertEqual(document['archive'], str(self.root / 'a.json'))
+        self.assertIsNone(db.load_qualitative('missing'))
+        db.save_qualitative('qualitative_20261028_000000_aaaaaa', {'submissions': [dict(class_name='system_1_2026', chapter='chap3', problem='p2')]}, [], 2)
+        listed = db.list_qualitative('system_1_2026', 'chap3', 'p1')
+        self.assertEqual([(r['id'], r['student_count'], r['confirmed'], r['proposed'], r['failed'], r['state']) for r in listed],
+                         [('qualitative_20261027_160320_5b98c4', 3, 1, 1, 1, 'finished')])
+        self.assertEqual([r['id'] for r in db.list_qualitative()], ['qualitative_20261028_000000_aaaaaa', 'qualitative_20261027_160320_5b98c4'])
+        self.assertEqual(db.list_qualitative('python_1_2026'), [])
+
+    def test_archive_reviews_writes_the_database_and_the_json_export(self):
+        from qualitative import archive_reviews, load_saved_reviews, load_reviews, DEFAULT_RUBRIC
+        rows = self.review_rows()
+        path = self.root / 'reports' / 'qualitative_20261027_174410_169c90.json'
+        archive_reviews(path, rows, {'rubric': DEFAULT_RUBRIC, 'submissions': [dict(class_name='system_1_2026', student='101', chapter='chap3', problem='p1')]})
+        self.assertEqual(load_reviews(path)['results'], rows)
+        path.unlink()
+        self.assertEqual(load_saved_reviews('qualitative_20261027_174410_169c90')['results'], rows)
+        with self.assertRaises(ValueError):
+            load_saved_reviews('missing')
+        rows[0]['status'] = 'bogus'
+        db.save_qualitative('qualitative_20261027_174410_169c90', {}, rows)
+        with self.assertRaises(ValueError):
+            load_saved_reviews('qualitative_20261027_174410_169c90')
+
+    def test_import_qualitative_loads_each_archive_once(self):
+        folder = self.root / 'reports'; folder.mkdir()
+        rows = self.review_rows()
+        for name, version in [('qualitative_20261026_103843_af3803', 1), ('qualitative_20261027_160320_5b98c4', 2)]:
+            (folder / f'{name}.json').write_text(json.dumps({'version': version, 'context': {'run_state': 'finished'}, 'results': rows}), encoding='utf-8')
+        (folder / 'qualitative_bad.json').write_text('{"version": 9}', encoding='utf-8')
+        (folder / 'other.json').write_text('{}', encoding='utf-8')
+        self.assertEqual(db.import_qualitative(folder), ['qualitative_20261026_103843_af3803', 'qualitative_20261027_160320_5b98c4'])
+        self.assertEqual(db.import_qualitative(folder), [])
+        (folder / 'live.json').write_text(json.dumps({'version': 2, 'context': {'run_state': 'running'}, 'results': rows[:1]}), encoding='utf-8')
+        (folder / 'live.json').rename(folder / 'qualitative_20261028_115134_94b9b3.json')
+        self.assertEqual(db.import_qualitative(folder), ['qualitative_20261028_115134_94b9b3'])
+        self.assertEqual(db.import_qualitative(folder), ['qualitative_20261028_115134_94b9b3'])
+        self.assertEqual(db.import_qualitative(self.root / 'nowhere'), [])
+        document = db.load_qualitative('qualitative_20261027_160320_5b98c4')
+        self.assertEqual((document['version'], document['results'], document['created_at']), (2, rows, '2026-10-27T07:03:30+00:00'))
+        self.assertEqual(db.list_qualitative()[0]['class_name'], 'system_1_2026')
+        self.assertEqual(db.main(['import', '--root', str(self.root / 'nowhere')]), None)
+
     def test_results_are_written_from_a_worker_thread_and_read_from_the_main_thread(self):
         import threading
         report = CaseReport(self.context, root=self.root / 'reports')
