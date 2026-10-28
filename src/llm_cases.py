@@ -46,7 +46,7 @@ comparison must be exact, trim or tokens. At most 10 cases. No other case fields
 
 
 class LLMClient:
-    def __init__(self, base_url=None, model=None, api_key=None, timeout=120, require_model=True):
+    def __init__(self, base_url=None, model=None, api_key=None, timeout=300, require_model=True):
         config = llm_settings()
         self.base_url = (base_url if base_url is not None else config['url']).strip().rstrip('/')
         if not self.base_url:
