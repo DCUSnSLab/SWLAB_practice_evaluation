@@ -1,6 +1,5 @@
 """Local roster names, kept separate from submission identity and model requests."""
 import json
-from pathlib import Path
 import re
 
 from core.roster import read_roster
