@@ -12,6 +12,8 @@ from unittest.mock import patch
 os.environ['QT_QPA_PLATFORM']='offscreen'
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from PyQt6.QtWidgets import QApplication,QTableWidgetSelectionRange
+from PyQt6.QtCore import Qt,QItemSelectionModel
+from PyQt6.QtTest import QTest,QSignalSpy
 from qualitative import DEFAULT_RUBRIC,validate_review,confirm_review,load_reviews,save_reviews
 from qualitative_gui import QualitativeWindow
 
@@ -48,6 +50,62 @@ class QualitativeSelectionTests(unittest.TestCase):
             self.app.processEvents();time.sleep(.01)
         self.app.processEvents()
         self.assertFalse(self.window.worker.isRunning())
+
+    def proposed_row(self,index,score=5):
+        raw=deepcopy(self.raw)
+        for criterion in raw['criteria']:criterion['score']=score
+        row=validate_review(raw,DEFAULT_RUBRIC,{'main.c':'line'})
+        row.update({k:v for k,v in self.submissions[index].items() if k!='path'})
+        row.update(status='ai_proposed',final_score=None,reviewer_note='')
+        return row
+
+    def test_select_missing_proposals_includes_errors_but_preserves_zero_and_confirmed_scores(self):
+        w=self.window
+        w.rows[1]={**w.rows[1],'status':'error','message':'응답 실패'}
+        zero=self.proposed_row(2,0);w.rows[2]=zero;w.refresh_rows()
+        w.select_unreviewed_button.click()
+        self.assertEqual(w.selected_indices(),[0,1])
+        self.assertEqual(w.start_button.text(),'선택 2명 일괄 정성평가')
+        confirm_review(zero,0,'0점 제안 검토 완료')
+        before=deepcopy(zero)
+        w.refresh_rows();w.select_unreviewed_button.click()
+        self.assertEqual(w.selected_indices(),[0,1])
+        with patch('llm_cases.LLMClient._request',return_value=self.payload) as request:
+            w.start_button.click();self.finish()
+        self.assertEqual(request.call_count,2)
+        self.assertEqual(w.rows[2],before)
+        self.assertEqual(load_reviews(w.archive)['results'],w.rows)
+        w.select_unreviewed_button.click()
+        self.assertEqual(w.selected_indices(),[])
+        self.assertFalse(w.start_button.isEnabled())
+        self.assertIn('0명 선택',w.status.text())
+
+    def test_arrow_keys_update_current_details_without_changing_bulk_selection(self):
+        w=self.window
+        first=self.proposed_row(0);first.update(summary='첫 학생 평가',reviewer_note='첫 검토')
+        second=self.proposed_row(1);second['summary']='둘째 학생 평가';confirm_review(second,75,'둘째 검토')
+        w.rows=[first,second,{**w.rows[2],'status':'error','message':'셋째 학생 응답 실패'}]
+        w.refresh_rows();self.select(0)
+        w.table.setCurrentCell(0,0,QItemSelectionModel.SelectionFlag.NoUpdate)
+        w.show();w.table.setFocus();self.app.processEvents()
+        selection_changes=QSignalSpy(w.table.itemSelectionChanged)
+        QTest.keyClick(w.table,Qt.Key.Key_Down)
+        self.assertEqual(w.table.currentRow(),1)
+        self.assertIn('둘째 학생 평가',w.detail.toPlainText())
+        self.assertEqual(w.final_score.value(),75)
+        self.assertEqual(w.note.toPlainText(),'둘째 검토')
+        QTest.keyClick(w.table,Qt.Key.Key_Down)
+        self.assertEqual(w.detail.toPlainText(),'셋째 학생 응답 실패')
+        self.assertEqual(w.final_score.value(),0);self.assertEqual(w.note.toPlainText(),'')
+        w.rows[2]=w.unreviewed_row(self.submissions[2]);w.refresh_rows()
+        self.assertIn('아직 정성평가하지 않은',w.detail.toPlainText())
+        QTest.keyClick(w.table,Qt.Key.Key_Up)
+        self.assertIn('둘째 학생 평가',w.detail.toPlainText())
+        QTest.keyClick(w.table,Qt.Key.Key_Up)
+        self.assertIn('첫 학생 평가',w.detail.toPlainText())
+        self.assertEqual(w.note.toPlainText(),'첫 검토')
+        self.assertEqual(w.selected_indices(),[0])
+        self.assertEqual(len(selection_changes),0)
 
     def test_only_current_selection_is_requested_and_other_reviews_are_preserved(self):
         w=self.window
@@ -98,6 +156,9 @@ class QualitativeSelectionTests(unittest.TestCase):
             w.start()
             self.assertTrue(entered.wait(2))
             self.assertEqual([s['student'] for s in w.worker.arguments[3]],['101','103'])
+            self.assertFalse(w.select_unreviewed_button.isEnabled())
+            w.select_unreviewed_button.click()
+            self.assertEqual(w.selected_indices(),[0,2])
             w.table.selectAll()
             self.assertFalse(w.start_button.isEnabled())
             w.cancel_button.click();release.set();self.finish()

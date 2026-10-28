@@ -118,11 +118,15 @@ class QualitativeWindow(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self.selection_changed)
+        self.table.currentCellChanged.connect(self.current_changed)
         selection=QHBoxLayout()
         self.select_all_button=QPushButton('전체 선택');self.select_all_button.clicked.connect(self.table.selectAll)
+        self.select_unreviewed_button=QPushButton('미평가·실패 선택')
+        self.select_unreviewed_button.setToolTip('미평가·평가 실패 등 AI 제안 점수가 없는 학생만 선택합니다. 0점 제안과 교수자 확정 학생은 제외합니다.')
+        self.select_unreviewed_button.clicked.connect(self.select_without_proposals)
         self.clear_selection_button=QPushButton('선택 해제');self.clear_selection_button.clicked.connect(self.table.clearSelection)
-        selection.addWidget(self.select_all_button);selection.addWidget(self.clear_selection_button)
-        self.selection_info=QLabel();selection.addWidget(self.selection_info,1);layout.addLayout(selection)
+        selection.addWidget(self.select_all_button);selection.addWidget(self.select_unreviewed_button);selection.addWidget(self.clear_selection_button)
+        self.selection_info=QLabel();self.selection_info.setWordWrap(True);selection.addWidget(self.selection_info,1);layout.addLayout(selection)
         layout.addWidget(self.table,1)
         self.detail=QPlainTextEdit();self.detail.setReadOnly(True);layout.addWidget(self.detail,2)
         final=QHBoxLayout();self.final_score=QDoubleSpinBox();self.final_score.setDecimals(2)
@@ -174,12 +178,21 @@ class QualitativeWindow(QWidget):
             if key not in row_keys:
                 self.rows.append(self.unreviewed_row(submission));row_keys.add(key)
         self.refresh_rows()
+        self.select_rows([i for i,row in enumerate(self.rows) if self.submission_key(row) in keys])
+
+    def select_rows(self,indices):
         with QSignalBlocker(self.table):
             self.table.clearSelection()
-            for i,row in enumerate(self.rows):
-                if self.submission_key(row) in keys:
-                    self.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,self.table.columnCount()-1),True)
+            for i in indices:
+                self.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,self.table.columnCount()-1),True)
+            if indices:self.table.setCurrentCell(indices[0],0,QItemSelectionModel.SelectionFlag.NoUpdate)
         self.selection_changed()
+
+    def select_without_proposals(self):
+        if self.worker and self.worker.isRunning():return
+        indices=[i for i,row in enumerate(self.rows) if row.get('suggested_score') is None and row['status']!='confirmed']
+        self.select_rows(indices)
+        self.status.setText(f'AI 제안 없는 학생 {len(indices)}명 선택 · 미평가·평가 실패 포함')
 
     def selected_submissions(self):
         indices=self.selected_indices()
@@ -195,7 +208,7 @@ class QualitativeWindow(QWidget):
 
     def set_busy(self,busy):
         for widget in (self.start_button,self.problem_text,self.rubric_table,self.load_problem_button,self.url,self.model,self.open_button,self.note,self.final_score,
-                       self.problem_points,self.reset_rubric_button,self.batch_note,self.select_all_button,self.clear_selection_button,
+                       self.problem_points,self.reset_rubric_button,self.batch_note,self.select_all_button,self.select_unreviewed_button,self.clear_selection_button,
                        *self.resource_modes.values()):widget.setEnabled(not busy)
         self.cancel_button.setEnabled(busy)
         self.update_approval_controls(busy)
@@ -217,12 +230,12 @@ class QualitativeWindow(QWidget):
         self.confirm_button.setEnabled(not busy and current in indices and self.rows[current]['status'] in ('ai_proposed','confirmed'))
 
     def selection_changed(self):
-        indices=self.selected_indices()
-        if indices:
-            if self.table.currentRow() not in indices:
-                self.table.setCurrentCell(indices[0],0,QItemSelectionModel.SelectionFlag.NoUpdate)
-            self.show_selected()
-        else:self.detail.clear()
+        self.show_selected()
+        self.update_approval_controls()
+
+    def current_changed(self,*_):
+        # MultiSelection arrow keys move the current cell without changing bulk selection.
+        self.show_selected()
         self.update_approval_controls()
 
     def populate_rubric(self):
@@ -338,12 +351,17 @@ class QualitativeWindow(QWidget):
 
     def show_selected(self):
         index=self.table.currentRow()
-        if not 0<=index<len(self.rows):return
+        if not 0<=index<len(self.rows):
+            self.detail.clear();self.note.clear();self.final_score.setValue(0)
+            self.confirm_button.setEnabled(False);return
         row=self.rows[index]
         if row['status']=='not_reviewed':
             self.detail.setPlainText('아직 정성평가하지 않은 학생입니다. 표에서 평가할 학생을 선택하고 일괄 정성평가를 누르세요.')
+            self.note.clear();self.final_score.setValue(0)
             self.confirm_button.setEnabled(False);return
-        if row['status']=='error':self.detail.setPlainText(row.get('message',''));self.confirm_button.setEnabled(False);return
+        if row['status']=='error':
+            self.detail.setPlainText(row.get('message',''));self.note.clear();self.final_score.setValue(0)
+            self.confirm_button.setEnabled(False);return
         parts=[row['summary']]
         if row.get('scoring_version') == SCORING_VERSION:
             parts.extend([f'종합 품질: {row["overall"]}/100 · 제안 부분점수: {row["suggested_score"]}/{row["max_score"]}',
