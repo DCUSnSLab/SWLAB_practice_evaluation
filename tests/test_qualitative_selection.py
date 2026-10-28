@@ -59,6 +59,47 @@ class QualitativeSelectionTests(unittest.TestCase):
         row.update(status='ai_proposed',final_score=None,reviewer_note='')
         return row
 
+    def test_student_search_jumps_cycles_and_shows_details_without_changing_selection(self):
+        w=self.window
+        w.rows=[self.proposed_row(i) for i in range(3)]
+        for row in w.rows:row['summary']=f"{row['student']} 학생 평가"
+        w.refresh_rows();self.select(0,2)
+        w.student_search.setText(' 102 ')
+        self.assertEqual(w.table.currentRow(),1)
+        self.assertIn('102 학생 평가',w.detail.toPlainText())
+        self.assertEqual(w.search_result.text(),'1/1명')
+        self.assertEqual(w.selected_indices(),[0,2])
+        w.student_search.setText('10')
+        self.assertEqual(w.table.currentRow(),0)
+        self.assertEqual(w.search_result.text(),'1/3명')
+        QTest.keyClick(w.student_search,Qt.Key.Key_Return)
+        self.assertEqual(w.table.currentRow(),1)
+        self.assertIn('102 학생 평가',w.detail.toPlainText())
+        w.find_next_button.click();self.assertEqual(w.table.currentRow(),2)
+        self.assertIn('103 학생 평가',w.detail.toPlainText())
+        w.find_next_button.click();self.assertEqual(w.table.currentRow(),0)
+        self.assertEqual(w.selected_indices(),[0,2])
+        w.student_search.setText('999')
+        self.assertEqual(w.search_result.text(),'검색 결과 없음')
+        self.assertFalse(w.find_next_button.isEnabled())
+        self.assertEqual(w.table.currentRow(),0)
+        w.student_search.clear()
+        self.assertEqual(w.search_result.text(),'')
+        self.assertEqual(w.selected_indices(),[0,2])
+
+    def test_search_prefers_exact_id_and_tracks_updated_roster(self):
+        w=self.window
+        w.rows[0]['student']='001020';w.rows[1]['student']='00102';w.rows[2]['student']='001021'
+        w.refresh_rows();w.student_search.setText('00102')
+        self.assertEqual(w.table.currentRow(),1)
+        self.assertEqual(w.search_result.text(),'1/3명')
+        w.rows=[w.rows[2]];w.refresh_rows()
+        self.assertEqual(w.search_result.text(),'1/1명')
+        w.find_next_button.click();self.assertEqual(w.table.item(w.table.currentRow(),0).text(),'001021')
+        w.rows=[];w.refresh_rows()
+        self.assertEqual(w.search_result.text(),'검색 결과 없음')
+        self.assertFalse(w.find_next_button.isEnabled())
+
     def test_select_missing_proposals_includes_errors_but_preserves_zero_and_confirmed_scores(self):
         w=self.window
         w.rows[1]={**w.rows[1],'status':'error','message':'응답 실패'}

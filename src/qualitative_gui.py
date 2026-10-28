@@ -119,6 +119,16 @@ class QualitativeWindow(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self.selection_changed)
         self.table.currentCellChanged.connect(self.current_changed)
+        search=QHBoxLayout();search.addWidget(QLabel('학번 검색'))
+        self.student_search=QLineEdit();self.student_search.setPlaceholderText('학번 전체 또는 일부 입력')
+        self.student_search.setClearButtonEnabled(True)
+        self.student_search.setToolTip('입력하면 해당 학생으로 이동합니다. Enter로 다음 일치 학생을 찾으며, 일괄 작업 대상 선택은 유지합니다.')
+        self.student_search.textChanged.connect(lambda _:self.find_student())
+        self.student_search.returnPressed.connect(lambda:self.find_student(next_match=True))
+        self.find_next_button=QPushButton('다음 찾기');self.find_next_button.clicked.connect(lambda:self.find_student(next_match=True))
+        self.search_result=QLabel()
+        search.addWidget(self.student_search,1);search.addWidget(self.find_next_button);search.addWidget(self.search_result)
+        layout.addLayout(search)
         selection=QHBoxLayout()
         self.select_all_button=QPushButton('전체 선택');self.select_all_button.clicked.connect(self.table.selectAll)
         self.select_unreviewed_button=QPushButton('미평가·실패 선택')
@@ -216,6 +226,33 @@ class QualitativeWindow(QWidget):
     def selected_indices(self):
         return sorted(index.row() for index in self.table.selectionModel().selectedRows() if index.row()<len(self.rows))
 
+    def student_matches(self):
+        query=self.student_search.text().strip()
+        if not query:return []
+        exact=[];partial=[]
+        for i,row in enumerate(self.rows):
+            student=str(row.get('student',''))
+            if student==query:exact.append(i)
+            elif query in student:partial.append(i)
+        return exact+partial
+
+    def update_search_status(self):
+        query=self.student_search.text().strip();matches=self.student_matches()
+        self.find_next_button.setEnabled(bool(matches))
+        current=self.table.currentRow()
+        text=('' if not query else '검색 결과 없음' if not matches else
+              f'{matches.index(current)+1}/{len(matches)}명' if current in matches else f'{len(matches)}명 일치')
+        self.search_result.setText(text)
+
+    def find_student(self,*,next_match=False):
+        matches=self.student_matches();current=self.table.currentRow()
+        if matches:
+            position=(matches.index(current)+1)%len(matches) if next_match and current in matches else 0
+            index=matches[position]
+            self.table.setCurrentCell(index,0,QItemSelectionModel.SelectionFlag.NoUpdate)
+            self.table.scrollToItem(self.table.item(index,0),QAbstractItemView.ScrollHint.PositionAtCenter)
+        self.update_search_status()
+
     def update_approval_controls(self,busy=None):
         if busy is None:busy=bool(self.worker and self.worker.isRunning())
         indices=self.selected_indices()
@@ -228,6 +265,7 @@ class QualitativeWindow(QWidget):
         self.batch_confirm_button.setEnabled(not busy and pending>0)
         current=self.table.currentRow()
         self.confirm_button.setEnabled(not busy and current in indices and self.rows[current]['status'] in ('ai_proposed','confirmed'))
+        self.update_search_status()
 
     def selection_changed(self):
         self.show_selected()
