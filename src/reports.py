@@ -1,4 +1,6 @@
-"""Portable result exports; UTF-8 BOM supports Excel's CSV importer."""
+"""Portable result exports; UTF-8 BOM supports Excel's CSV importer.
+
+CaseReport writes every save to the SQLite store (db.py) and mirrors it to run.json / CSV."""
 import csv
 import json
 import io
@@ -38,6 +40,29 @@ class CaseReport:
         self.save([], 'running')
 
     @classmethod
+    def load(cls, run_id):
+        """Rebuild a report from the database; the result matches `open` so callers need no branch."""
+        import db
+        document = db.load_run(run_id)
+        if document is None:
+            raise ValueError('저장된 채점 기록을 찾을 수 없습니다: ' + str(run_id))
+        report = cls.__new__(cls)
+        report.directory = Path(document.get('directory') or ROOT / 'reports' / 'case-grading' / run_id)
+        report.context = document['context']
+        report.created_at = document.get('created_at')
+        report.state = document.get('state', 'completed')
+        report.score_overrides = document.get('score_overrides', {})
+        return report, document
+
+    def saved(self):
+        """The latest persisted document: the database first, the run.json export as fallback."""
+        import db
+        document = db.load_run(self.directory.name)
+        if document is None:
+            _, document = self.open(self.directory / 'run.json')
+        return document
+
+    @classmethod
     def open(cls, path):
         path = Path(path)
         document = json.loads(path.read_text(encoding='utf-8-sig'))
@@ -62,6 +87,9 @@ class CaseReport:
             from midterm_scoring import score_students, export_scores
             document['score_overrides'] = self.score_overrides
             document['scores'] = score_students(rows, self.context, state, self.score_overrides)
+        import db
+        db.save_run(self.directory.name, self.context, rows, state, error, self.score_overrides,
+                    self.created_at, self.directory)
         atomic_text(self.directory / 'run.json', json.dumps(document, ensure_ascii=False, indent=2))
         self.state = state
         save_report(self.directory / 'cases.csv', rows)
@@ -85,7 +113,7 @@ class CaseReport:
             raise ValueError('배점 채점이 끝난 기록에서 점수를 조정하세요.')
         if not reviewer.strip() or not reason.strip():
             raise ValueError('검토자와 조정 사유를 입력하세요.')
-        _, saved = self.open(self.directory / 'run.json')
+        saved = self.saved()
         scores = score_students(saved['results'], self.context, self.state, saved.get('score_overrides', {}))
         row = next((s for s in scores if s['student'] == student), None)
         if row is None or target not in row['problems']:

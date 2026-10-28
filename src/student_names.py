@@ -1,4 +1,8 @@
-"""Local roster names, kept separate from submission identity and model requests."""
+"""Local roster names, kept separate from submission identity and model requests.
+
+Names live in the SQLite store (see db.py). Roster CSV files and the older
+.student_names.json cache are still read so existing folders keep their names.
+"""
 import json
 import re
 
@@ -9,16 +13,12 @@ CACHE_NAME = '.student_names.json'
 
 
 def save_student_names(class_name, rows):
-    from paths import ORIGIN
-    target = safe_path(ORIGIN, class_name, CACHE_NAME)
-    names = {str(row['student_id']): row['name'] for row in rows}
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(target.name + '.tmp')
-    temporary.write_text(json.dumps({'version': 1, 'names': names}, ensure_ascii=False, indent=2), encoding='utf-8')
-    temporary.replace(target)
+    import db
+    db.save_roster(class_name, rows)
 
 
 def read_student_names(class_name):
+    import db
     from paths import ORIGIN, ROOT
     names = {}
     match = re.fullmatch(r'(.+)_(\d+)_(\d{4})', class_name)
@@ -45,6 +45,10 @@ def read_student_names(class_name):
                                            isinstance(name, str) and name.strip() for sid, name in cached.items()):
             names.update(cached)
     except (OSError, ValueError):
+        pass
+    try:
+        names.update(db.roster_names(class_name))
+    except Exception:  # peewee errors share no useful base; a broken DB must not hide the list
         pass
     return names
 

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent)); import support  # noqa: E401,F401  isolates the SQLite store
 from midterm import ALL_TARGETS, TARGETS
 from midterm_scoring import POINTS
 from midterm_qualitative import load_problems, problem_statement, scaled_rubric, source_patterns, qualitative_preset

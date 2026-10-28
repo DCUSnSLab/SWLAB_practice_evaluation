@@ -173,6 +173,8 @@ assignments/**/layout.local.yaml
 testdata/**/*.csv
 testdata/*.csv
 testdata/*.db
+# SQLite store with rosters, grading runs and score adjustments
+data/
 # Local lecture originals and their generated text catalog
 강의자료/
 docs/practice_catalog.json

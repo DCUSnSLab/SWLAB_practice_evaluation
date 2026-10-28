@@ -141,6 +141,10 @@ def build_main_view(w):
     detail_layout.addWidget(w.btnExport)
     close_detail = QPushButton('닫기'); close_detail.clicked.connect(w.detailDialog.close); detail_layout.addWidget(close_detail)
     w.btnDetails = QPushButton('상세 근거 보기'); w.btnDetails.clicked.connect(w.openResultDetails)
+    w.comboRuns = QComboBox(); w.comboRuns.addItem('저장된 실행 선택…', None)
+    w.comboRuns.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+    w.comboRuns.activated.connect(lambda index: w.loadSavedRun())
+    actions.addWidget(w.comboRuns)
     for button in (w.btnOpenReport, w.btnReadReport, w.btnDetails): actions.addWidget(button)
     w.btnMidtermScore = QPushButton('문제 점수 조정'); w.btnMidtermScore.clicked.connect(w.adjustMidtermScore)
     actions.addWidget(w.btnMidtermScore); w.btnMidtermScore.hide()
@@ -190,6 +194,7 @@ def build_main_view(w):
 
     advanced = w.menuBar().addMenu('도구 / 고급')
     advanced.addAction('CSV / JSON 내보내기…').triggered.connect(w.exportResults)
+    w.actionImportReports = advanced.addAction('이전 run.json 기록을 DB로 가져오기'); w.actionImportReports.triggered.connect(w.importReports)
     w.actionManifestGrading = advanced.addAction('명세 파일로 배점 채점…'); w.actionManifestGrading.triggered.connect(w.openProblemGrading)
     for name, text, handler in [('btnMaterials', '실습 자료 보기', w.openMaterials), ('btnMaker', '기준 코드로 케이스 만들기', w.openMaker), ('btnReview', '수동 평가 기록', w.recordReview)]:
         action = advanced.addAction(text); action.triggered.connect(handler); setattr(w, name, action)

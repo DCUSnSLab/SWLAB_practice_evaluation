@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent)); import support  # noqa: E401,F401  isolates the SQLite store
 from midterm import load_suite, grade_suite, library_case
 from midterm_scoring import score_students, settings, POINTS, export_scores
 from reports import CaseReport

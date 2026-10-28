@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent)); import support  # noqa: E401,F401  isolates the SQLite store
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from gui import Gui
 from midterm import ALL_TARGETS, TARGETS, load_suite, grade_suite
@@ -25,6 +26,7 @@ class MidtermGuiTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.addCleanup(self.temp.cleanup)
+        support.isolate(self)
         for student in ('101', '102'):
             work = self.root / 'origin/system_3_2026' / student / 'midterm'
             work.mkdir(parents=True)
@@ -67,6 +69,39 @@ class MidtermGuiTests(unittest.TestCase):
         self.app.processEvents()
         self.assertFalse(w.job.isRunning())
         self.assertTrue(w.btnGrade.isEnabled())
+
+    def test_saved_runs_are_listed_per_chapter_and_reload_from_the_database(self):
+        import db
+        w = self.window
+        (w.radioWin if os.name == 'nt' else w.radioLinux).setChecked(True)
+        self.assertEqual(w.comboRuns.count(), 1)
+        def grade(folder, bundle, config):
+            return [dict(case=c['target_file'] + ' / ' + c['name'], target_file=c['target_file'], passed=True, status='passed')
+                    for c in bundle['cases']]
+        with patch('midterm.grade_suite', side_effect=grade):
+            w.gradeSelected(); self.finish_job()
+        first = w.case_report.directory.name
+        self.assertEqual([w.comboRuns.itemData(i) for i in range(w.comboRuns.count())], [None, first])
+        self.assertEqual(w.comboRuns.currentData(), first)
+        self.assertIn('중간고사 전체 · 완료 · 2명', w.comboRuns.currentText())
+        w.comboProblem.setCurrentIndex(w.comboProblem.findData('copy.c'))
+        with patch('midterm.grade_suite', side_effect=grade):
+            w.gradeSelected(); self.finish_job()
+        second = w.case_report.directory.name
+        self.assertEqual([w.comboRuns.itemData(i) for i in range(w.comboRuns.count())], [None, second, first])
+        self.assertEqual(len(w.results), 10)
+        # The run.json export is gone, the database still has every row.
+        import shutil; shutil.rmtree(w.case_report.directory.parent)
+        w.comboRuns.setCurrentIndex(w.comboRuns.findData(first)); w.loadSavedRun()
+        self.assertEqual(w.case_report.directory.name, first)
+        self.assertEqual(len(w.results), 72)
+        self.assertEqual(w.resultTable.item(0, 3).text(), '75 / 75')
+        self.assertIn('저장된 실행 상태: completed', w.log_output.toPlainText())
+        w.comboChapter.setCurrentText('chap1')
+        self.assertEqual(w.comboRuns.count(), 1)
+        w.comboChapter.setCurrentText('midterm')
+        self.assertEqual(w.comboRuns.count(), 3)
+        self.assertEqual(db.list_runs('system_3_2026', 'midterm')[0]['id'], second)
 
     def test_file_catalog_counts_preview_and_switch_back_to_regular_chapter(self):
         w = self.window

@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 os.environ['QT_QPA_PLATFORM']='offscreen'
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent)); import support  # noqa: E401,F401  isolates the SQLite store
 from PyQt6.QtWidgets import QApplication,QTableWidgetSelectionRange
 from PyQt6.QtCore import Qt,QItemSelectionModel,QPoint
 from PyQt6.QtTest import QTest,QSignalSpy

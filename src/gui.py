@@ -269,6 +269,7 @@ class Gui(QMainWindow):
         self.casePathPanel.setVisible(not midterm and self.btnCasePath.isChecked())
         self.updateTestCasePath()
         self.updateFileList()
+        self.refreshRunList()
 
     def updateFileList(self):
         self.listFiles.clear()
@@ -601,7 +602,7 @@ class Gui(QMainWindow):
     def onGradingProgress(self, index):
         if self.case_report:
             try:
-                _, saved = CaseReport.open(self.case_report.directory / 'run.json')
+                saved = self.case_report.saved()
                 self.results = saved['results']
                 self.refreshResultsTable()
                 self.resultHeadline.setText(f"{index} / {len(self.case_report.context['students'])}명 완료 · 결과 자동 저장 중")
@@ -846,6 +847,7 @@ class Gui(QMainWindow):
         if self.case_report:
             self.showReportLocation()
             self.log_output.append(html.escape(f'자동 저장: {self.case_report.directory}'))
+        self.refreshRunList()
 
     def refreshCaseInfo(self):
         from grader import Grader
@@ -880,18 +882,77 @@ class Gui(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.case_report.directory)))
 
     def readCaseReport(self):
+        """Open a run.json export (for example copied from another PC) and keep it in the database."""
         from paths import ROOT
         path, _ = QFileDialog.getOpenFileName(self, '저장된 채점 결과', str(ROOT / 'reports' / 'case-grading'), '채점 기록 (run.json)')
         if path:
             try:
-                self.case_report, document = CaseReport.open(path)
-                self.log_output.clear()
-                self.gradingDone(document['results'])
-                self.log_output.append(html.escape('저장된 실행 상태: ' + str(document.get('state'))))
-                if document.get('error'):
-                    self.log_output.append(html.escape(document['error']))
+                report, document = CaseReport.open(path)
+                import db
+                db.save_run(report.directory.name, report.context, document['results'], report.state,
+                            document.get('error'), report.score_overrides, report.created_at, report.directory)
+                self.showSavedRun(report, document)
             except (OSError, ValueError) as exc:
                 QMessageBox.warning(self, '기록 열기 실패', str(exc))
+
+    def showSavedRun(self, report, document):
+        self.case_report = report
+        self.log_output.clear()
+        self.gradingDone(document['results'])
+        self.log_output.append(html.escape('저장된 실행 상태: ' + str(document.get('state'))))
+        if document.get('error'):
+            self.log_output.append(html.escape(document['error']))
+
+    def refreshRunList(self):
+        """Saved runs for the selected class and chapter, newest first; the current run stays selected."""
+        import db
+        from datetime import datetime
+        combo = self.comboRuns
+        current = self.case_report.directory.name if self.case_report else None
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem('저장된 실행 선택…', None)
+        try:
+            runs = db.list_runs(self.comboClass.currentData(), self.comboChapter.currentText()) if self.comboClass.currentData() else []
+        except Exception as exc:  # a damaged database must not block grading
+            runs = []
+            self.displayLog('저장된 실행 목록을 읽지 못했습니다: ' + html.escape(str(exc)))
+        states = {'completed': '완료', 'cancelled': '중지됨', 'running': '진행 중', 'error': '오류'}
+        for run in runs:
+            try:
+                stamp = datetime.fromisoformat(run['created_at']).astimezone().strftime('%Y-%m-%d %H:%M')
+            except (TypeError, ValueError):
+                stamp = run['id']
+            problem = run['problem'] or '문제 없음'
+            if problem == '__all__':
+                problem = '중간고사 전체'
+            combo.addItem(f"{stamp} · {problem} · {states.get(run['state'], run['state'])} · {run['student_count']}명", run['id'])
+        if current is not None and combo.findData(current) >= 0:
+            combo.setCurrentIndex(combo.findData(current))
+        combo.blockSignals(False)
+        combo.setToolTip(f'이 분반·장의 저장된 채점 실행 {len(runs)}개 · 선택하면 결과를 다시 불러옵니다.')
+
+    def loadSavedRun(self):
+        run_id = self.comboRuns.currentData()
+        if not run_id or self.grading_active or (self.case_report and self.case_report.directory.name == run_id):
+            return
+        try:
+            report, document = CaseReport.load(run_id)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, '기록 열기 실패', str(exc))
+            return
+        self.showSavedRun(report, document)
+
+    def importReports(self):
+        """Load run.json folders written before the database existed."""
+        import db
+        try:
+            imported = db.import_reports()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, '기록 가져오기 실패', str(exc))
+            return
+        self.refreshRunList()
+        QMessageBox.information(self, '기록 가져오기', f'{len(imported)}개 실행을 DB에 추가했습니다.\n{db.default_path()}')
 
     def recordReview(self):
         students = [item.text() for item in self.listStudents.selectedItems()]
@@ -952,7 +1013,7 @@ class Gui(QMainWindow):
                         export_scores(path, self.midtermScores())
                     else:
                         from core.record import atomic_text
-                        document = json.loads((self.case_report.directory / 'run.json').read_text(encoding='utf-8'))
+                        document = self.case_report.saved()
                         atomic_text(path, json.dumps(document, ensure_ascii=False, indent=2))
                 else:
                     save_report(path, self.results)
