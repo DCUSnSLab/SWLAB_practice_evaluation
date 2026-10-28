@@ -241,6 +241,32 @@ def delete_run(run_id):
         return GradingRun.delete().where(GradingRun.id == run_id).execute()
 
 
+def gradebook_records(class_name, chapter, problems):
+    """All evidence for a live gradebook; historical picker limits must not truncate it."""
+    if not class_name or not chapter or not problems:
+        return []
+    problem_filter = GradingRun.problem.in_([p for p in problems if p is not None])
+    if None in problems:
+        problem_filter |= GradingRun.problem.is_null()
+    with session(), database.atomic():
+        runs = list(GradingRun.select().where((GradingRun.class_name == class_name) &
+                    (GradingRun.chapter == chapter) & problem_filter))
+        documents = {run.id: dict(id=run.id, context=json.loads(run.context), state=run.state,
+                     created_at=run.created_at, results=[], score_overrides={}) for run in runs}
+        if not documents:
+            return []
+        # Subqueries avoid SQLite's parameter limit even after thousands of executions.
+        ids = GradingRun.select(GradingRun.id).where((GradingRun.class_name == class_name) &
+                (GradingRun.chapter == chapter) & problem_filter)
+        for row in CaseResult.select().where(CaseResult.run.in_(ids)).order_by(CaseResult.position):
+            documents[row.run_id]['results'].append(json.loads(row.data))
+        for row in ScoreOverride.select().where(ScoreOverride.run.in_(ids)).order_by(ScoreOverride.id):
+            documents[row.run_id]['score_overrides'].setdefault(row.student, {}).setdefault(row.target, []).append(
+                dict(previous_score=row.previous_score, score=row.score, reviewer=row.reviewer,
+                     reason=row.reason, at=row.at, source_run=row.run_id))
+    return list(documents.values())
+
+
 def import_reports(root=None):
     """Load run.json archives that are not in the database yet; returns the imported run IDs."""
     import paths

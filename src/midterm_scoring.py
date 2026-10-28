@@ -76,7 +76,8 @@ def score_students(rows, context, state='completed', overrides=None):
                 by_id[row['case']].append(row)
         problems = {}
         for target in selected:
-            required = [c for c in definitions[target] if c.get('category') != 'extra']
+            own_definitions = context.get('student_cases', {}).get(student, {}).get(target, definitions[target])
+            required = [c for c in own_definitions if c.get('category') != 'extra']
             required_rows = [by_id[f'{target} / {c["name"]}'] for c in required]
             known = bool(required) and all(len(matches) == 1 and (
                 matches[0]['status'] == 'passed' and matches[0]['passed'] is True or
@@ -110,7 +111,9 @@ def score_students(rows, context, state='completed', overrides=None):
             reasons = ['제출 경로를 찾을 수 없음']
         if not reasons:
             reasons = ['필수 케이스 모두 통과']
-        extra_ids = {c['target_file'] + ' / ' + c['name'] for c in bundle['cases'] if c.get('category') == 'extra'}
+        own_cases = [c for target in selected for c in
+                     context.get('student_cases', {}).get(student, {}).get(target, definitions[target])]
+        extra_ids = {c['target_file'] + ' / ' + c['name'] for c in own_cases if c.get('category') == 'extra'}
         extra_issues = sum(r['case'] in extra_ids and not r['passed'] for r in own)
         if extra_issues:
             reasons.append(f'추가 {extra_issues}건 미통과·점수 제외')
@@ -122,7 +125,7 @@ def score_students(rows, context, state='completed', overrides=None):
                            max_score=sum(POINTS[t] for t in selected), problems=problems,
                            known_score=float(sum(Decimal(str(v)) for v in final_scores if v is not None)),
                            passed_cases=sum(r.get('passed') is True for r in own if not r['status'].startswith('manual_')),
-                           total_cases=len(bundle['cases']), reason='\n'.join(reasons), reason_short=brief))
+                           total_cases=len(own_cases), reason='\n'.join(reasons), reason_short=brief))
     return result
 
 

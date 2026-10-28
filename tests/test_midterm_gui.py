@@ -82,8 +82,9 @@ class MidtermGuiTests(unittest.TestCase):
             w.gradeSelected(); self.finish_job()
         first = w.case_report.directory.name
         self.assertEqual([w.comboRuns.itemData(i) for i in range(w.comboRuns.count())], [None, first])
-        self.assertEqual(w.comboRuns.currentData(), first)
-        self.assertIn('중간고사 전체 · 완료 · 2명', w.comboRuns.currentText())
+        self.assertIsNone(w.comboRuns.currentData())
+        self.assertEqual(w.comboRuns.currentText(), '최신 점수표 (기본)')
+        self.assertIn('중간고사 전체 · 완료 · 2명', w.comboRuns.itemText(1))
         w.comboProblem.setCurrentIndex(w.comboProblem.findData('copy.c'))
         with patch('midterm.grade_suite', side_effect=grade):
             w.gradeSelected(); self.finish_job()

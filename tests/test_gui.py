@@ -24,6 +24,7 @@ class GuiTests(unittest.TestCase):
             cls.app.setFont(QFont('Malgun Gothic', 9))
 
     def setUp(self):
+        support.isolate(self)
         config = patch.dict(os.environ, {'SWLAB_LLM_URL': 'https://example.invalid/v1',
             'SWLAB_LLM_MODEL': 'test-model', 'SWLAB_CONFIG': str(Path(tempfile.gettempdir()) / 'swlab-unused-settings.json')})
         config.start()
@@ -338,7 +339,9 @@ class GuiTests(unittest.TestCase):
                 self.assertEqual([r['passed'] for r in saved['results']], [True, False])
                 self.assertTrue(archive.with_name('cases.csv').is_file())
                 self.assertTrue(archive.with_name('summary.csv').is_file())
-                self.assertIn(str(archive.parent), window.report_location.text())
+                import db
+                self.assertIn(str(db.default_path()), window.report_location.text())
+                self.assertIn(str(archive.parent), window.log_output.toPlainText())
                 window.results = []
                 with patch('gui.QFileDialog.getOpenFileName', return_value=(str(archive), '')):
                     window.readCaseReport()

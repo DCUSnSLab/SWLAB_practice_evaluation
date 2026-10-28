@@ -125,6 +125,8 @@ class Gui(QMainWindow):
         self.job = None
         self.results = []
         self.case_report = None
+        self.latest_view = True
+        self.gradebook = None
         
         self.init_ui()
 
@@ -260,6 +262,7 @@ class Gui(QMainWindow):
         return names
 
     def onProblemChanged(self):
+        self.latest_view = True
         midterm = self.isMidterm()
         self.midtermPanel.setVisible(midterm)
         self.midtermScoringInfo.setVisible(midterm)
@@ -505,6 +508,7 @@ class Gui(QMainWindow):
             QMessageBox.warning(self, '채점 준비 실패', str(exc))
             return
         self.case_report = report
+        self.latest_view = True
         self.grading_active = True
         self.showReportLocation()
         self.results = []
@@ -572,6 +576,7 @@ class Gui(QMainWindow):
                        self.comboProblem, self.listStudents, self.btnMaker, self.btnReview, self.actionManifestGrading,
                        self.btnReadReport, self.txtTestCasePath, self.btnBrowseTestPath, self.btnAI,
                        self.btnSelectAll, self.btnClearSelection, self.btnQualitative, self.actionEnvironment,
+                       self.comboRuns, self.btnReloadReviews,
                        self.radioWin, self.radioLinux, self.radioDocker, self.radioWSL):
             widget.setEnabled(not busy)
         self.txtMidtermProfile.setEnabled(not busy)
@@ -620,14 +625,18 @@ class Gui(QMainWindow):
     def finishGrading(self):
         self.grading_active = False
         self.btnStop.setEnabled(False)
+        self.refreshResultsTable()
 
     def gradingFailed(self, message):
         self.onGradingProgress(self.progress_bar.value())
         self.resultHeadline.setText('채점 중단: ' + message)
 
     def refreshResultsTable(self):
-        context = self.case_report.context if self.case_report else {}
+        self.loadLatestGradebook()
+        context = self.display_context
         self.loadResultReviews()
+        if self.latest_view:
+            self.showReportLocation()
         self.resultDetail.clear()
         scored = 'midterm_scoring' in context
         self.btnMidtermScore.setVisible(scored)
@@ -658,15 +667,20 @@ class Gui(QMainWindow):
                 self.resultTable.setColumnWidth(column, max(110, width))
         students = context.get('students')
         names = dict(context.get('student_names') or {})
-        if not self.case_report:
+        if not self.case_report or self.gradebook:
             students = list(dict.fromkeys([*[self.listStudents.item(i).text() for i in range(self.listStudents.count())],
                                            *self.result_reviews]))
             names = self.studentNames()
         for student, reviews in self.result_reviews.items():
             if not names.get(student):
                 names[student] = next((r.get('student_name') for r in reviews if r.get('student_name')), '')
-        summaries = summarize_cases(self.results, students, context.get('case_count', 0),
-                                    self.case_report.state if self.case_report else 'completed', names)
+        if self.gradebook:
+            self.gradebook.context['students'] = list(dict.fromkeys([*context['students'], *self.result_reviews]))
+            self.gradebook.context['student_names'].update({s: n for s, n in names.items() if n})
+            summaries = self.gradebook.summaries()
+        else:
+            summaries = summarize_cases(self.display_rows, students, context.get('case_count', 0),
+                                        self.case_report.state if self.case_report else 'completed', names)
         self.resultTable.setRowCount(len(summaries))
         labels = {'pending': '대기', 'not_run': '미실행', 'ungraded': '채점 불가', 'manual_review': '수동 검토',
                   'needs_review': '검토 필요'}
@@ -702,9 +716,35 @@ class Gui(QMainWindow):
         return dict(class_name=self.comboClass.currentData(), chapter=self.comboChapter.currentText(),
                     problem=None if self.comboProblem.isHidden() else self.selectedProblem())
 
+    def loadLatestGradebook(self):
+        self.gradebook = None
+        self.gradebook_error = None
+        if self.latest_view:
+            from latest_gradebook import LatestGradebook
+            try:
+                gradebook = LatestGradebook(self.selectedResultScope(),
+                    [self.listStudents.item(i).text() for i in range(self.listStudents.count())], self.studentNames())
+                if gradebook.records:
+                    self.gradebook = gradebook
+            except Exception as exc:
+                self.gradebook_error = str(exc)
+        self.display_context = self.gradebook.context if self.gradebook else (self.case_report.context if self.case_report else {})
+        self.display_rows = self.gradebook.rows if self.gradebook else self.results
+
+    def showLatestResults(self):
+        if self.grading_active:
+            return
+        if not self.latest_view:
+            self.case_report = None
+            self.results = []
+        self.latest_view = True
+        self.comboRuns.setCurrentIndex(0)
+        self.refreshResultsTable()
+        self.showReportLocation()
+
     def loadResultReviews(self):
         import db
-        scope = self.case_report.context if self.case_report else self.selectedResultScope()
+        scope = self.display_context or self.selectedResultScope()
         problem = scope.get('problem')
         problems = [problem]
         if problem == '__all__':
@@ -734,6 +774,8 @@ class Gui(QMainWindow):
             self.resultTable.setColumnWidth(column, 170)
 
     def showResultReviewLegend(self):
+        if self.gradebook_error:
+            self.resultLegend.setText(self.resultLegend.text() + '\n최신 점수표 DB 읽기 실패: ' + self.gradebook_error)
         if self.result_reviews_error:
             self.resultLegend.setText(self.resultLegend.text() + '\n정성평가 DB 읽기 실패: ' + self.result_reviews_error)
         elif self.result_reviews:
@@ -743,9 +785,18 @@ class Gui(QMainWindow):
         if not self.case_report and not self.results:
             self.resultHeadline.setText(f'저장된 정성평가 {len(self.result_reviews)}명 · 실행 채점 미실행' if self.result_reviews
                                        else '아직 채점 결과가 없습니다. 아래 일괄 채점 버튼을 눌러 시작하세요.')
+        if self.gradebook:
+            self.resultLegend.setText(self.resultLegend.text() + '\n최신 점수표: 학생·문제별 최근 실행 + 저장된 수동 조정 점수')
+            if not self.grading_active:
+                stopped = self.case_report and self.case_report.state == 'cancelled'
+                self.resultHeadline.setText(('최근 실행 중지됨 · ' if stopped else '') +
+                    f'최신 점수표 · {self.resultTable.rowCount()}명 · 실행·정성평가·점수 조정 자동 반영')
 
     def midtermScores(self):
         from midterm_scoring import score_students
+        if self.gradebook:
+            self.gradebook.context['students'] = list(dict.fromkeys([*self.gradebook.context['students'], *self.result_reviews]))
+            return self.gradebook.scores(self.case_report.state if self.grading_active and self.case_report else 'completed')
         return score_students(self.results, self.case_report.context, self.case_report.state,
                               self.case_report.score_overrides)
 
@@ -807,7 +858,7 @@ class Gui(QMainWindow):
         self.showResultReviewLegend()
 
     def adjustMidtermScore(self):
-        if self.grading_active or not self.case_report or 'midterm_scoring' not in self.case_report.context:
+        if self.grading_active or 'midterm_scoring' not in self.display_context:
             return
         if self.resultTable.currentRow() < 0 and self.resultTable.rowCount():
             self.resultTable.selectRow(0)
@@ -836,7 +887,10 @@ class Gui(QMainWindow):
         form.addRow('검토자', reviewer); form.addRow('조정 사유', reason); form.addRow(error); form.addRow(save)
         def persist():
             try:
-                self.case_report.override_midterm_score(student, target.currentData(), score.value(), reviewer.text(), reason.text())
+                if self.gradebook:
+                    self.gradebook.adjust(student, target.currentData(), score.value(), reviewer.text(), reason.text())
+                else:
+                    self.case_report.override_midterm_score(student, target.currentData(), score.value(), reviewer.text(), reason.text())
                 self.refreshResultsTable()
                 dialog.accept()
             except (OSError, ValueError) as exc:
@@ -865,7 +919,7 @@ class Gui(QMainWindow):
         from result_reviews import details
         for review in getattr(self, 'result_reviews', {}).get(student, []):
             lines.extend(['', details(review), ''])
-        if self.case_report and 'midterm_scoring' in self.case_report.context:
+        if 'midterm_scoring' in self.display_context:
             summary = next(s for s in self.midtermScores() if s['student'] == student)
             lines.append(f'총점: {summary["final_score"]} / {summary["max_score"]} · 문제별 필수 케이스 통과 비율 적용')
             lines.extend(['사유:', summary['reason']])
@@ -878,10 +932,12 @@ class Gui(QMainWindow):
                   'missing': '제출 경로 없음', 'error': '채점 오류', 'no_tests': '케이스 없음', 'needs_review': '검토 필요'}
         def display(value):
             return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
-        for row in self.results:
+        for row in self.display_rows:
             if row['student'] != student:
                 continue
             lines.extend(['', f"[{row['case']}] {labels.get(row['status'], row['status'])}"])
+            if row.get('source_run'):
+                lines.append(f"실행 기록: {row['source_run']} · {row.get('graded_at', '')}")
             if row.get('target_file'): lines.append('대상 파일: ' + row['target_file'])
             if row.get('message'): lines.append(row['message'])
             if row.get('expected') is not None: lines.extend(['기대 출력:', display(row['expected'])])
@@ -958,6 +1014,14 @@ class Gui(QMainWindow):
         self.updateSelectionSummary()
 
     def showReportLocation(self):
+        if self.latest_view:
+            import db
+            self.report_location.setText(f'최신 점수표: {db.default_path()} · 과거 실행 선택은 선택사항입니다.')
+            self.report_location.setToolTip('학생별 상세 근거에서 사용한 실행 기록과 점수 조정 내역을 확인합니다.')
+            self.btnOpenReport.setEnabled(False)
+            return
+        if not self.case_report:
+            return
         self.report_location.setText(f'자동 저장: {self.case_report.directory}')
         self.report_location.setCursorPosition(0)
         summary = '문제별 점수·총점' if 'midterm_scoring' in self.case_report.context else '학생별 통과 수'
@@ -983,22 +1047,24 @@ class Gui(QMainWindow):
                 QMessageBox.warning(self, '기록 열기 실패', str(exc))
 
     def showSavedRun(self, report, document):
+        self.latest_view = False
         self.case_report = report
         self.log_output.clear()
         self.gradingDone(document['results'])
         self.log_output.append(html.escape('저장된 실행 상태: ' + str(document.get('state'))))
         if document.get('error'):
             self.log_output.append(html.escape(document['error']))
+        self.resultHeadline.setText('과거 실행 조회 · ' + report.directory.name + ' · 최신 점수표는 목록의 첫 항목으로 돌아가세요.')
 
     def refreshRunList(self):
         """Saved runs for the selected class and chapter, newest first; the current run stays selected."""
         import db
         from datetime import datetime
         combo = self.comboRuns
-        current = self.case_report.directory.name if self.case_report else None
+        current = self.case_report.directory.name if self.case_report and not self.latest_view else None
         combo.blockSignals(True)
         combo.clear()
-        combo.addItem('저장된 실행 선택…', None)
+        combo.addItem('최신 점수표 (기본)', None)
         try:
             runs = db.list_runs(self.comboClass.currentData(), self.comboChapter.currentText()) if self.comboClass.currentData() else []
         except Exception as exc:  # a damaged database must not block grading
@@ -1017,11 +1083,14 @@ class Gui(QMainWindow):
         if current is not None and combo.findData(current) >= 0:
             combo.setCurrentIndex(combo.findData(current))
         combo.blockSignals(False)
-        combo.setToolTip(f'이 분반·장의 저장된 채점 실행 {len(runs)}개 · 선택하면 결과를 다시 불러옵니다.')
+        combo.setToolTip(f'기본은 학생·문제별 최신 점수표입니다. 과거 실행 {len(runs)}개는 필요할 때만 선택하세요.')
 
     def loadSavedRun(self):
         run_id = self.comboRuns.currentData()
-        if not run_id or self.grading_active or (self.case_report and self.case_report.directory.name == run_id):
+        if not run_id:
+            self.showLatestResults()
+            return
+        if self.grading_active or (not self.latest_view and self.case_report and self.case_report.directory.name == run_id):
             return
         try:
             report, document = CaseReport.load(run_id)
@@ -1090,13 +1159,22 @@ class Gui(QMainWindow):
             self.displayLog('저장 실패: ' + html.escape(str(exc)))
 
     def exportResults(self):
-        if not self.results:
+        if not self.display_rows:
             QMessageBox.information(self, 'Export', 'Run grading first.')
             return
         path, _ = QFileDialog.getSaveFileName(self, 'Export results', 'results.csv', 'CSV (*.csv);;JSON (*.json)')
         if path:
             try:
-                if self.case_report and 'midterm_scoring' in self.case_report.context:
+                if self.gradebook and Path(path).suffix.lower() == '.json':
+                    from core.record import atomic_text
+                    document = self.gradebook.document()
+                    document['qualitative_reviews'] = self.result_reviews
+                    if self.gradebook.midterm:
+                        document['scores'] = self.midtermScores()
+                    else:
+                        document['summaries'] = self.gradebook.summaries()
+                    atomic_text(path, json.dumps(document, ensure_ascii=False, indent=2))
+                elif 'midterm_scoring' in self.display_context:
                     if Path(path).suffix.lower() == '.csv':
                         from midterm_scoring import export_scores
                         export_scores(path, self.midtermScores())
@@ -1105,7 +1183,7 @@ class Gui(QMainWindow):
                         document = self.case_report.saved()
                         atomic_text(path, json.dumps(document, ensure_ascii=False, indent=2))
                 else:
-                    save_report(path, self.results)
+                    save_report(path, self.display_rows)
             except OSError as exc:
                 QMessageBox.warning(self, 'Export', str(exc))
 
