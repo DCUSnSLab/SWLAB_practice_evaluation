@@ -45,6 +45,12 @@ docker compose build grader
 .\.venv\Scripts\python src\main.py
 ```
 
+매번 명령을 입력하지 않으려면 바로가기를 한 번 만들어 두세요. 바탕화면에 **SWLAB 실습 채점** 아이콘이 생기고, 두 번 클릭하면 콘솔 창 없이 앱이 열립니다. 작업 표시줄이나 시작 메뉴에 고정해도 됩니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\create_shortcut.ps1
+```
+
 상주 컨테이너를 켤 필요는 없습니다. 매 실행마다 `grader-image`에서 컨테이너를 만들고 정리합니다. 프로젝트 전체를 컨테이너에 마운트하지 않습니다.
 
 ## 일괄 채점 사용 순서
