@@ -12,7 +12,7 @@ from unittest.mock import patch
 os.environ['QT_QPA_PLATFORM']='offscreen'
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from PyQt6.QtWidgets import QApplication,QTableWidgetSelectionRange
-from PyQt6.QtCore import Qt,QItemSelectionModel
+from PyQt6.QtCore import Qt,QItemSelectionModel,QPoint
 from PyQt6.QtTest import QTest,QSignalSpy
 from qualitative import DEFAULT_RUBRIC,validate_review,confirm_review,load_reviews,save_reviews
 from qualitative_gui import QualitativeWindow
@@ -42,7 +42,7 @@ class QualitativeSelectionTests(unittest.TestCase):
 
     def select(self,*indices):
         self.window.table.clearSelection()
-        for i in indices:self.window.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,4),True)
+        for i in indices:self.window.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,self.window.table.columnCount()-1),True)
 
     def finish(self):
         deadline=time.monotonic()+5
@@ -58,6 +58,60 @@ class QualitativeSelectionTests(unittest.TestCase):
         row.update({k:v for k,v in self.submissions[index].items() if k!='path'})
         row.update(status='ai_proposed',final_score=None,reviewer_note='')
         return row
+
+    def test_header_sorting_keeps_student_selection_details_and_search_aligned(self):
+        w=self.window
+        w.rows=[self.proposed_row(i,score) for i,score in enumerate((10,2,9))]
+        for row,name in zip(w.rows,('다학생','가학생','나학생')):
+            row.update(student_name=name,summary=row['student']+' 평가')
+        w.refresh_rows();w.select_rows([0,2])
+        self.assertEqual([w.table.horizontalHeaderItem(i).text() for i in range(2)],['학번','이름'])
+        w.table.sortItems(4,Qt.SortOrder.AscendingOrder)
+        self.assertEqual([w.table.item(i,0).text() for i in range(3)],['102','103','101'])
+        self.assertEqual(w.selected_indices(),[0,2]);self.assertEqual(w.current_index(),0)
+        self.assertIn('101 평가',w.detail.toPlainText())
+        w.table.sortItems(4,Qt.SortOrder.DescendingOrder)
+        self.assertEqual([w.table.item(i,0).text() for i in range(3)],['101','103','102'])
+        w.show();self.app.processEvents()
+        header=w.table.horizontalHeader()
+        point=QPoint(header.sectionViewportPosition(1)+header.sectionSize(1)//2,header.height()//2)
+        orders=[]
+        for _ in range(2):
+            QTest.mouseClick(header.viewport(),Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,point)
+            order=header.sortIndicatorOrder();orders.append(order)
+            expected=['102','103','101'] if order==Qt.SortOrder.AscendingOrder else ['101','103','102']
+            self.assertEqual([w.table.item(i,0).text() for i in range(3)],expected)
+            self.assertEqual(w.selected_indices(),[0,2])
+        self.assertNotEqual(*orders)
+        w.student_search.setText('102')
+        self.assertEqual(w.current_index(),1)
+        self.assertIn('102 평가',w.detail.toPlainText())
+        self.assertEqual(w.selected_indices(),[0,2])
+        order=header.sortIndicatorOrder();w.refresh_rows()
+        self.assertEqual(header.sortIndicatorOrder(),order)
+        self.assertEqual(w.current_index(),1);self.assertEqual(w.selected_indices(),[0,2])
+
+    def test_sorted_review_and_approval_target_only_selected_student(self):
+        w=self.window
+        w.select_submissions([{**s,'student_name':n} for s,n in zip(self.submissions,('나학생','가학생','다학생'))])
+        for i in range(3):w.rows[i]={**self.proposed_row(i),'student_name':w.rows[i]['student_name']}
+        w.refresh_rows();w.select_rows([1])
+        w.table.sortItems(1,Qt.SortOrder.DescendingOrder)
+        self.assertEqual(w.table.item(2,0).text(),'102')
+        self.assertEqual(w.current_index(),1)
+        with patch('llm_cases.LLMClient._request',return_value=self.payload) as request:
+            w.start_button.click();self.finish()
+        self.assertEqual(request.call_count,1)
+        sent=json.loads(request.call_args.args[1]['messages'][1]['content'])
+        self.assertIn('student_102',sent['source_files']['main.c'])
+        self.assertEqual(w.selected_indices(),[1]);self.assertEqual(w.current_index(),1)
+        w.batch_confirm_button.click()
+        self.assertEqual([row['final_score'] for row in w.rows],[None,50,None])
+        self.assertEqual(load_reviews(w.archive)['results'],w.rows)
+        w.table.sortItems(5,Qt.SortOrder.AscendingOrder)
+        self.assertEqual(w.table.item(0,0).text(),'102')
+        self.assertEqual(w.current_index(),1)
+        self.assertEqual(w.final_score.value(),50)
 
     def test_student_search_jumps_cycles_and_shows_details_without_changing_selection(self):
         w=self.window
@@ -90,7 +144,8 @@ class QualitativeSelectionTests(unittest.TestCase):
     def test_names_survive_review_csv_and_report_reload_without_entering_model_request(self):
         w=self.window
         w.select_submissions([{**self.submissions[1],'student_name':'이름표시학생'}])
-        self.assertEqual(w.table.item(1,0).text(),'102 · 이름표시학생')
+        self.assertEqual(w.table.item(1,0).text(),'102')
+        self.assertEqual(w.table.item(1,1).text(),'이름표시학생')
         with patch('llm_cases.LLMClient._request',return_value=self.payload) as request:
             w.start_button.click();self.finish()
         self.assertNotIn('이름표시학생',json.dumps(request.call_args.args[1],ensure_ascii=False))
@@ -104,13 +159,14 @@ class QualitativeSelectionTests(unittest.TestCase):
         reopened=QualitativeWindow([]);self.addCleanup(reopened.close)
         with patch('qualitative_gui.QFileDialog.getOpenFileName',return_value=(str(w.archive),'')):
             reopened.open_report()
-        self.assertEqual(reopened.table.item(1,0).text(),'102 · 이름표시학생')
+        self.assertEqual(reopened.table.item(1,0).text(),'102')
+        self.assertEqual(reopened.table.item(1,1).text(),'이름표시학생')
 
     def test_search_prefers_exact_id_and_tracks_updated_roster(self):
         w=self.window
         w.rows[0]['student']='001020';w.rows[1]['student']='00102';w.rows[2]['student']='001021'
         w.refresh_rows();w.student_search.setText('00102')
-        self.assertEqual(w.table.currentRow(),1)
+        self.assertEqual(w.table.item(w.table.currentRow(),0).text(),'00102')
         self.assertEqual(w.search_result.text(),'1/3명')
         w.rows=[w.rows[2]];w.refresh_rows()
         self.assertEqual(w.search_result.text(),'1/1명')

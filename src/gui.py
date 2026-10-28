@@ -4,6 +4,7 @@ import json
 from paths import case_path, parse_args
 from reports import save_report, CaseReport, summarize_cases
 from pathlib import Path
+from table_items import SortableItem, student_sort_value
 
 from PyQt6.QtCore import QThread, QObject, pyqtSignal as Signal, pyqtSlot as Slot
 from PyQt6.QtCore import QUrl, Qt
@@ -623,14 +624,19 @@ class Gui(QMainWindow):
             self.refreshMidtermScores()
             return
         self.resultLegend.setText('O 통과 · △ 부족(일부 통과) · X 오답(통과 없음) · — 미판정')
-        self.resultTable.setColumnCount(5)
-        self.resultTable.setHorizontalHeaderLabels(['학생', '판정', '기호', '통과 / 전체', '실패 케이스'])
+        selected = self.resultStudent(self.resultTable.currentRow()) if self.resultTable.currentRow()>=0 else None
+        self.resultTable.blockSignals(True)
+        self.resultTable.setSortingEnabled(False)
+        self.resultTable.clearContents()
+        self.resultTable.setColumnCount(6)
+        self.resultTable.setHorizontalHeaderLabels(['학번', '이름', '판정', '기호', '통과 / 전체', '실패 케이스'])
+        if getattr(self,'_result_sort_schema',None)!='cases':
+            self.resultTable.horizontalHeader().setSortIndicator(0,Qt.SortOrder.AscendingOrder)
+        self._result_sort_schema='cases'
         self.resultTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.resultTable.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.resultTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         summaries = summarize_cases(self.results, context.get('students'), context.get('case_count', 0),
                                     self.case_report.state if self.case_report else 'completed', context.get('student_names'))
-        selected = self.resultTable.currentRow()
-        self.resultTable.blockSignals(True)
         self.resultTable.setRowCount(len(summaries))
         labels = {'pending': '대기', 'not_run': '미실행', 'ungraded': '채점 불가', 'manual_review': '수동 검토',
                   'needs_review': '검토 필요'}
@@ -640,14 +646,15 @@ class Gui(QMainWindow):
             symbol = '—'
             if summary['status'] == 'graded' and total > 0:
                 symbol = 'O' if passed == total else ('△' if passed else 'X')
-            from student_names import student_label
-            values = [student_label(summary), status, symbol, '—' if passed is None else f'{passed} / {total}',
+            name=str(summary.get('student_name') or '')
+            values = [summary['student'], name, status, symbol, '—' if passed is None else f'{passed} / {total}',
                       '—' if passed is None else str(total - passed)]
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
+            sort_values=[student_sort_value(summary['student']),name,status,symbol,passed,None if passed is None else total-passed]
+            for column, (value,sort_value) in enumerate(zip(values,sort_values)):
+                item = SortableItem(value,sort_value)
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, summary['student'])
-                if column == 2:
+                if column == 3:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     font = item.font(); font.setBold(True); item.setFont(font)
                     item.setToolTip({'O': '통과: 모든 케이스를 통과했습니다.',
@@ -655,10 +662,9 @@ class Gui(QMainWindow):
                                      'X': '오답: 통과한 케이스가 없습니다.',
                                      '—': '아직 판정할 수 없습니다. 판정 열과 상세 근거를 확인하세요.'}[symbol])
                 self.resultTable.setItem(index, column, item)
+        self.resultTable.setSortingEnabled(True)
         self.resultTable.blockSignals(False)
-        if selected >= 0 and selected < len(summaries):
-            self.resultTable.selectRow(selected)
-            self.showResultDetails()
+        self.restoreResultStudent(selected)
 
     def midtermScores(self):
         from midterm_scoring import score_students
@@ -668,45 +674,52 @@ class Gui(QMainWindow):
     def refreshMidtermScores(self):
         from midterm import TARGETS
         from midterm_scoring import POINTS
-        selected = self.resultTable.currentRow()
+        selected = self.resultStudent(self.resultTable.currentRow()) if self.resultTable.currentRow()>=0 else None
         table = self.resultTable
         table.blockSignals(True)
-        table.setColumnCount(12)
-        table.setHorizontalHeaderLabels(['학생', '점수 상태', '총점',
+        table.setSortingEnabled(False)
+        table.clearContents()
+        table.setColumnCount(13)
+        table.setHorizontalHeaderLabels(['학번', '이름', '점수 상태', '총점',
             *[f'{TARGETS[t].split(" · ")[0]}\n{POINTS[t]}점' for t in POINTS], '통과 / 전체', '사유'])
+        if getattr(self,'_result_sort_schema',None)!='midterm':
+            table.horizontalHeader().setSortIndicator(0,Qt.SortOrder.AscendingOrder)
+        self._result_sort_schema='midterm'
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(11, QHeaderView.ResizeMode.Interactive)
-        table.setColumnWidth(11, 340)
+        table.horizontalHeader().setSectionResizeMode(12, QHeaderView.ResizeMode.Interactive)
+        table.setColumnWidth(12, 340)
         scores = self.midtermScores()
         table.setRowCount(len(scores))
         labels = {'graded': '자동 계산', 'adjusted': '점수 조정', 'needs_review': '검토 필요',
                   'pending': '대기', 'not_run': '미실행'}
         for index, row in enumerate(scores):
             total = '검토 필요' if row['final_score'] is None else f'{row["final_score"]:g} / {row["max_score"]:g}'
-            from student_names import student_label
-            values = [student_label(row), labels[row['status']], total]
+            name=str(row.get('student_name') or '')
+            values = [row['student'], name, labels[row['status']], total]
+            sort_values=[student_sort_value(row['student']),name,values[2],row['final_score']]
             for target in POINTS:
                 problem = row['problems'].get(target)
                 values.append('—' if problem is None else ('검토' if problem['final_score'] is None else f'{problem["final_score"]:g}'))
+                sort_values.append(problem['final_score'] if problem is not None else None)
             values.append(f'{row["passed_cases"]} / {row["total_cases"]}')
             values.append(row['reason_short'])
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
+            sort_values.extend([row['passed_cases'],row['reason_short']])
+            for column, (value,sort_value) in enumerate(zip(values,sort_values)):
+                item = SortableItem(value,sort_value)
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, row['student'])
-                if column == 11:
+                if column == 12:
                     item.setToolTip(row['reason'])
-                if 3 <= column <= 9:
-                    target = list(POINTS)[column - 3]
+                if 4 <= column <= 10:
+                    target = list(POINTS)[column - 4]
                     problem = row['problems'].get(target)
                     item.setToolTip(target + (f'\n필수 통과 {problem["passed_required"]}/{problem["required_cases"]}'
                                               f'\n자동 {problem["auto_score"]} / 최종 {problem["final_score"]} / 배점 {problem["max_score"]}' if problem else '\n이번 실행에서 선택하지 않은 문제'))
                 table.setItem(index, column, item)
+        table.setSortingEnabled(True)
         table.blockSignals(False)
         self.resultLegend.setText('점수 = 문제 배점 × 필수 케이스 통과 비율 (소수 둘째 자리) · 추가 케이스는 점수 제외 · 검토 문제는 총점 미확정')
-        if 0 <= selected < len(scores):
-            table.selectRow(selected)
-            self.showResultDetails()
+        self.restoreResultStudent(selected)
 
     def adjustMidtermScore(self):
         if self.grading_active or not self.case_report or 'midterm_scoring' not in self.case_report.context:
@@ -747,16 +760,23 @@ class Gui(QMainWindow):
         dialog.exec()
 
     def resultStudent(self, index):
-        """The result table shows '학번 · 이름'; the ID alone identifies the student."""
+        """Sorting changes visual rows; the ID alone identifies the student."""
         item = self.resultTable.item(index, 0)
-        return item.data(Qt.ItemDataRole.UserRole) or item.text()
+        return (item.data(Qt.ItemDataRole.UserRole) or item.text()) if item is not None else None
+
+    def restoreResultStudent(self, student):
+        if student is None:return
+        for index in range(self.resultTable.rowCount()):
+            if self.resultStudent(index)==student:
+                self.resultTable.selectRow(index);self.showResultDetails();return
 
     def showResultDetails(self):
         index = self.resultTable.currentRow()
         if index < 0 or self.resultTable.item(index, 0) is None:
             return
         student = self.resultStudent(index)
-        lines = [f'학생 {self.resultTable.item(index, 0).text()} · 케이스별 상세 결과']
+        from student_names import student_label
+        lines = [f'학생 {student_label(dict(student=student,student_name=self.resultTable.item(index,1).text()))} · 케이스별 상세 결과']
         if self.case_report and 'midterm_scoring' in self.case_report.context:
             summary = next(s for s in self.midtermScores() if s['student'] == student)
             lines.append(f'총점: {summary["final_score"]} / {summary["max_score"]} · 문제별 필수 케이스 통과 비율 적용')

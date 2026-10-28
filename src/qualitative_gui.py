@@ -13,7 +13,8 @@ from llm_config import llm_settings
 from materials import build_catalog
 from slide_picker import SlidePicker
 from paths import ROOT
-from student_names import fill_student_names, student_label
+from student_names import fill_student_names
+from table_items import SortableItem, student_sort_value
 from qualitative import DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,confirm_reviews,save_reviews,load_reviews
 from qualitative_rubric import (SCORING_VERSION, RESOURCE_IDS, resource_scope,
     validate_dcucode_rubric)
@@ -49,6 +50,7 @@ class QualitativeWindow(QWidget):
         self.context = {}
         self.worker = None
         self.archive = None
+        self.refreshing_table = False
         self.decks = build_catalog()
         self.rubric = deepcopy(self.preset.get('rubric') or DEFAULT_RUBRIC)
         root = QVBoxLayout(self)
@@ -114,9 +116,12 @@ class QualitativeWindow(QWidget):
         self.refresh_resource_info()
         split.addWidget(config)
         panel=QWidget();layout=QVBoxLayout(panel)
-        self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['학번 · 이름','상태','종합 품질 / 100','제안 부분점수','교수자 확정'])
+        self.table=QTableWidget(0,6);self.table.setHorizontalHeaderLabels(['학번','이름','상태','종합 품질 / 100','제안 부분점수','교수자 확정'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0,QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1,QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSortIndicator(0,Qt.SortOrder.AscendingOrder)
+        self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -164,6 +169,7 @@ class QualitativeWindow(QWidget):
         for button in (self.start_button,self.cancel_button,self.export_button,self.open_button):actions.addWidget(button)
         self.progress=QProgressBar();actions.addWidget(self.progress);root.addLayout(actions)
         self.status=QLabel(config_error or 'AI 평가를 제안으로 저장합니다. 학생을 선택해 근거를 검토하고 최종 점수를 확정하세요.');self.status.setWordWrap(True);root.addWidget(self.status)
+        self.table.model().layoutChanged.connect(self.table_order_changed)
         self.refresh_rows()
         self.table.selectAll()
         self.set_busy(False)
@@ -200,8 +206,11 @@ class QualitativeWindow(QWidget):
         with QSignalBlocker(self.table):
             self.table.clearSelection()
             for i in indices:
-                self.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,self.table.columnCount()-1),True)
-            if indices:self.table.setCurrentCell(indices[0],0,QItemSelectionModel.SelectionFlag.NoUpdate)
+                visual=self.visual_row(self.submission_key(self.rows[i]))
+                if visual is not None:self.table.setRangeSelected(QTableWidgetSelectionRange(visual,0,visual,self.table.columnCount()-1),True)
+            if indices:
+                visual=self.visual_row(self.submission_key(self.rows[indices[0]]))
+                if visual is not None:self.table.setCurrentCell(visual,0,QItemSelectionModel.SelectionFlag.NoUpdate)
         self.selection_changed()
 
     def select_without_proposals(self):
@@ -230,14 +239,30 @@ class QualitativeWindow(QWidget):
         self.update_approval_controls(busy)
 
     def selected_indices(self):
-        return sorted(index.row() for index in self.table.selectionModel().selectedRows() if index.row()<len(self.rows))
+        keys={self.visual_key(index.row()) for index in self.table.selectionModel().selectedRows()}
+        return [i for i,row in enumerate(self.rows) if self.submission_key(row) in keys]
+
+    def visual_key(self,visual):
+        item=self.table.item(visual,0) if visual>=0 else None
+        key=item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        return tuple(key) if key is not None else None
+
+    def visual_row(self,key):
+        return next((i for i in range(self.table.rowCount()) if self.visual_key(i)==key),None)
+
+    def current_index(self):
+        key=self.visual_key(self.table.currentRow())
+        return next((i for i,row in enumerate(self.rows) if self.submission_key(row)==key),-1)
+
+    def table_order_changed(self,*_):
+        if not self.refreshing_table:self.current_changed()
 
     def student_matches(self):
         query=self.student_search.text().strip()
         if not query:return []
         exact=[];partial=[]
-        for i,row in enumerate(self.rows):
-            student=str(row.get('student',''))
+        for i in range(self.table.rowCount()):
+            student=self.table.item(i,0).text()
             if student==query:exact.append(i)
             elif query in student:partial.append(i)
         return exact+partial
@@ -269,7 +294,7 @@ class QualitativeWindow(QWidget):
         self.start_button.setEnabled(not busy and bool(indices) and bool(self.submissions))
         self.batch_confirm_button.setText(f'선택 학생 일괄 승인 ({pending}명)')
         self.batch_confirm_button.setEnabled(not busy and pending>0)
-        current=self.table.currentRow()
+        current=self.current_index()
         self.confirm_button.setEnabled(not busy and current in indices and self.rows[current]['status'] in ('ai_proposed','confirmed'))
         self.update_search_status()
 
@@ -358,20 +383,33 @@ class QualitativeWindow(QWidget):
         self.persist()
 
     def refresh_rows(self):
-        selected=self.selected_indices();current=self.table.currentRow();old_count=self.table.rowCount()
+        selected={self.visual_key(i.row()) for i in self.table.selectionModel().selectedRows()}
+        current=self.visual_key(self.table.currentRow());old_count=self.table.rowCount()
         labels={'ai_proposed':'AI 제안','confirmed':'교수자 확정','error':'평가 실패','not_reviewed':'미평가'}
+        self.refreshing_table=True
         with QSignalBlocker(self.table):
+            self.table.setSortingEnabled(False)
+            self.table.clearContents()
             self.table.setRowCount(len(self.rows))
             for i,row in enumerate(self.rows):
-                for column,value in enumerate([student_label(row),labels.get(row['status'],row['status']),
+                name=str(row.get('student_name') or '')
+                values=[str(row.get('student','')),name,labels.get(row['status'],row['status']),
                     '' if row.get('overall') is None else f"{row['overall']}/100",
-                    '' if row.get('suggested_score') is None else f"{row['suggested_score']}/{row['max_score']}",row.get('final_score')]):
-                    self.table.setItem(i,column,QTableWidgetItem('' if value is None else str(value)))
+                    '' if row.get('suggested_score') is None else f"{row['suggested_score']}/{row['max_score']}",row.get('final_score')]
+                sort_values=[student_sort_value(row.get('student','')),name,values[2],row.get('overall'),row.get('suggested_score'),row.get('final_score')]
+                for column,(value,sort_value) in enumerate(zip(values,sort_values)):
+                    item=SortableItem('' if value is None else value,sort_value)
+                    item.setData(Qt.ItemDataRole.UserRole,self.submission_key(row))
+                    self.table.setItem(i,column,item)
+            self.table.setSortingEnabled(True)
             self.table.clearSelection()
-            if old_count==0 and self.rows:selected=[0]
-            for i in selected:
-                self.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,self.table.columnCount()-1),True)
-            if self.rows:self.table.setCurrentCell(current if 0<=current<len(self.rows) else 0,0,QItemSelectionModel.SelectionFlag.NoUpdate)
+            if old_count==0 and self.rows:selected={self.visual_key(0)}
+            for i in range(self.table.rowCount()):
+                if self.visual_key(i) in selected:self.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,self.table.columnCount()-1),True)
+            if self.rows:
+                visual=self.visual_row(current)
+                self.table.setCurrentCell(visual if visual is not None else 0,0,QItemSelectionModel.SelectionFlag.NoUpdate)
+        self.refreshing_table=False
         self.selection_changed()
 
     def persist(self):
@@ -394,7 +432,7 @@ class QualitativeWindow(QWidget):
             self.worker.requestInterruption();self.status.setText('현재 학생의 응답을 받은 후 중지합니다.')
 
     def show_selected(self):
-        index=self.table.currentRow()
+        index=self.current_index()
         if not 0<=index<len(self.rows):
             self.detail.clear();self.note.clear();self.final_score.setValue(0)
             self.confirm_button.setEnabled(False);return
@@ -423,7 +461,7 @@ class QualitativeWindow(QWidget):
 
     def confirm(self):
         if self.worker and self.worker.isRunning():return
-        index=self.table.currentRow()
+        index=self.current_index()
         if index not in self.selected_indices():return
         try:confirm_review(self.rows[index],self.final_score.value(),self.note.toPlainText())
         except ValueError as error:self.status.setText(str(error));return

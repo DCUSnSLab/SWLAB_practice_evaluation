@@ -80,17 +80,20 @@ class GuiTests(unittest.TestCase):
                 {'student': 'missing', 'case': 'setup', 'status': 'missing', 'passed': False},
                 {'student': 'manual', 'case': 'review', 'status': 'manual_passed', 'passed': True}])
             window.refreshResultsTable()
-            self.assertEqual(window.resultTable.horizontalHeaderItem(1).text(), '판정')
-            self.assertEqual(window.resultTable.horizontalHeaderItem(2).text(), '기호')
-            self.assertEqual([window.resultTable.item(i, 2).text() for i in range(7)],
-                             ['O', '△', 'X', 'X', '—', '—', '—'])
-            self.assertEqual(window.resultTable.item(1, 3).text(), '1 / 2')
-            self.assertEqual(window.resultTable.item(1, 4).text(), '1')
-            self.assertIn('일부', window.resultTable.item(1, 2).toolTip())
+            self.assertEqual(window.resultTable.horizontalHeaderItem(2).text(), '판정')
+            self.assertEqual(window.resultTable.horizontalHeaderItem(3).text(), '기호')
+            by_id={window.resultStudent(i):i for i in range(7)}
+            self.assertEqual({sid:window.resultTable.item(i,3).text() for sid,i in by_id.items()},
+                             dict(zip(students,['O','△','X','X','—','—','—'])))
+            partial=by_id['partial']
+            self.assertEqual(window.resultTable.item(partial, 4).text(), '1 / 2')
+            self.assertEqual(window.resultTable.item(partial, 5).text(), '1')
+            self.assertIn('일부', window.resultTable.item(partial, 3).toolTip())
             window.case_report.state = 'cancelled'
             window.refreshResultsTable()
-            self.assertEqual(window.resultTable.item(6, 1).text(), '미실행')
-            self.assertEqual(window.resultTable.item(6, 2).text(), '—')
+            waiting=next(i for i in range(7) if window.resultStudent(i)=='waiting')
+            self.assertEqual(window.resultTable.item(waiting, 2).text(), '미실행')
+            self.assertEqual(window.resultTable.item(waiting, 3).text(), '—')
         finally:
             window.close()
             self.app.processEvents()
@@ -116,6 +119,34 @@ class GuiTests(unittest.TestCase):
             window.btnSelectAll.click()
             self.assertEqual(window.selectionCount.text(), '선택 3명 / 전체 3명')
             window.close()
+
+    def test_result_table_sorts_ids_names_and_numeric_counts_and_keeps_selected_student(self):
+        from types import SimpleNamespace
+        from PyQt6.QtCore import Qt
+        with patch.object(Gui,'refreshYearList'):
+            window=Gui()
+        self.addCleanup(window.close)
+        window.case_report=SimpleNamespace(context=dict(students=['10','2'],case_count=10,
+            student_names={'10':'가학생','2':'나학생'}),state='completed')
+        window.results=[dict(student=s,case=str(i),status='passed' if i<passed else 'wrong_answer',passed=i<passed)
+                        for s,passed in [('10',10),('2',2)] for i in range(10)]
+        window.refreshResultsTable()
+        table=window.resultTable
+        self.assertEqual([table.horizontalHeaderItem(i).text() for i in range(2)],['학번','이름'])
+        self.assertEqual([table.item(i,0).text() for i in range(2)],['2','10'])
+        table.selectRow(0)
+        table.sortItems(1,Qt.SortOrder.AscendingOrder)
+        self.assertEqual([table.item(i,0).text() for i in range(2)],['10','2'])
+        self.assertEqual(window.resultStudent(table.currentRow()),'2')
+        table.sortItems(4,Qt.SortOrder.AscendingOrder)
+        self.assertEqual([table.item(i,0).text() for i in range(2)],['2','10'])
+        table.sortItems(4,Qt.SortOrder.DescendingOrder)
+        self.assertEqual([table.item(i,0).text() for i in range(2)],['10','2'])
+        window.refreshResultsTable()
+        self.assertEqual(table.horizontalHeader().sortIndicatorOrder(),Qt.SortOrder.DescendingOrder)
+        self.assertEqual(table.horizontalHeader().sortIndicatorSection(),4)
+        self.assertEqual(window.resultStudent(table.currentRow()),'2')
+        self.assertIn('학생 2 · 나학생',window.resultDetail.toPlainText())
 
     def test_large_font_keeps_controls_on_screen(self):
         from ui_theme import apply_theme
@@ -176,7 +207,7 @@ class GuiTests(unittest.TestCase):
                     self.assertEqual(saved['state'], 'cancelled')
                     self.assertEqual(len(saved['results']), 1)
                     self.assertTrue(saved['results'][0]['passed'])
-                    self.assertEqual(window.resultTable.item(1, 1).text(), '미실행')
+                    self.assertEqual(window.resultTable.item(1, 2).text(), '미실행')
                     window.resultTable.selectRow(0)
                     self.assertIn('기대 출력', window.resultDetail.toPlainText())
                     self.assertIn('중지됨', window.resultHeadline.text())
@@ -385,8 +416,8 @@ class GuiTests(unittest.TestCase):
             row=load_reviews(window.archive)['results'][0]
             self.assertEqual(row['suggested_score'],50)
             self.assertEqual(row['overall'],80)
-            self.assertEqual(window.table.item(0,2).text(),'80/100')
-            self.assertEqual(window.table.item(0,3).text(),'50/75')
+            self.assertEqual(window.table.item(0,3).text(),'80/100')
+            self.assertEqual(window.table.item(0,4).text(),'50/75')
             self.assertIn('제외 (계산에 반영하지 않음)',window.detail.toPlainText())
             self.assertEqual(window.final_score.value(),50)
             self.assertTrue(window.problem_points.isEnabled())
@@ -396,7 +427,7 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(reopened.problem_points.value(),75)
             self.assertEqual(reopened.resource_modes['memory'].currentData(),'exclude')
             self.assertEqual(reopened.rows[0],row)
-            self.assertEqual(reopened.table.item(0,3).text(),'50/75')
+            self.assertEqual(reopened.table.item(0,4).text(),'50/75')
             reopened.close();window.close()
 
     def test_qualitative_batch_approval_selection_and_csv_modes(self):
@@ -423,7 +454,7 @@ class GuiTests(unittest.TestCase):
             window.clear_selection_button.click()
             self.assertFalse(window.batch_confirm_button.isEnabled())
             self.assertFalse(window.confirm_button.isEnabled())
-            for i in (0,2):window.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,4),True)
+            for i in (0,2):window.table.setRangeSelected(QTableWidgetSelectionRange(i,0,i,window.table.columnCount()-1),True)
             self.assertIn('(1명)',window.batch_confirm_button.text())
             window.batch_note.setText('선택 학생 검토')
             window.batch_confirm_button.click()

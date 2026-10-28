@@ -114,13 +114,13 @@ class MidtermGuiTests(unittest.TestCase):
         self.assertEqual(saved['state'], 'completed')
         self.assertEqual(len(saved['context']['midterm_suite']['cases']), 36)
         self.assertEqual(saved['context']['midterm_suite']['available_policy'], 'true_means_available')
-        self.assertEqual(w.resultTable.item(0, 10).text(), '35 / 36')
-        self.assertEqual(w.resultTable.item(0, 2).text(), '73 / 75')
-        self.assertEqual(w.resultTable.horizontalHeaderItem(11).text(), '사유')
-        self.assertIn('필수 4/5 통과', w.resultTable.item(0, 11).text())
-        self.assertIn('검토 필요', w.resultTable.item(1, 11).toolTip())
-        self.assertEqual(w.resultTable.item(1, 1).text(), '검토 필요')
+        self.assertEqual(w.resultTable.item(0, 11).text(), '35 / 36')
+        self.assertEqual(w.resultTable.item(0, 3).text(), '73 / 75')
+        self.assertEqual(w.resultTable.horizontalHeaderItem(12).text(), '사유')
+        self.assertIn('필수 4/5 통과', w.resultTable.item(0, 12).text())
+        self.assertIn('검토 필요', w.resultTable.item(1, 12).toolTip())
         self.assertEqual(w.resultTable.item(1, 2).text(), '검토 필요')
+        self.assertEqual(w.resultTable.item(1, 3).text(), '검토 필요')
         w.resultTable.selectRow(0)
         self.assertIn('Luster', w.resultDetail.toPlainText())
         self.assertIn('실행 단계: bookupdate.c', w.resultDetail.toPlainText())
@@ -137,9 +137,9 @@ class MidtermGuiTests(unittest.TestCase):
             dialog.findChild(QPushButton, 'saveMidtermScore').click()
         QTimer.singleShot(0, adjust)
         w.adjustMidtermScore()
-        self.assertEqual(w.resultTable.item(0, 2).text(), '75 / 75')
+        self.assertEqual(w.resultTable.item(0, 3).text(), '75 / 75')
         self.assertIn('manual review of copy output', w.resultDetail.toPlainText())
-        self.assertIn('수동 조정', w.resultTable.item(0, 11).text())
+        self.assertIn('수동 조정', w.resultTable.item(0, 12).text())
         export = self.root / 'grades.csv'
         with patch('gui.QFileDialog.getSaveFileName', return_value=(str(export), '')):
             w.exportResults()
@@ -149,6 +149,34 @@ class MidtermGuiTests(unittest.TestCase):
         self.assertEqual(summary['auto_score'], '73.0')
         self.assertEqual(summary['final_score'], '75.0')
         self.assertIn('manual review of copy output', summary['reason'])
+
+    def test_midterm_score_sorting_uses_numbers_and_preserves_student_on_refresh(self):
+        from PyQt6.QtCore import Qt
+        w=self.window
+        for i,name in enumerate(('나학생','가학생')):
+            w.listStudents.item(i).setData(Qt.ItemDataRole.UserRole,name)
+        w.comboProblem.setCurrentIndex(w.comboProblem.findData('copy.c'))
+        (w.radioWin if os.name=='nt' else w.radioLinux).setChecked(True)
+        def grade(folder,bundle,config):
+            return [dict(case=c['target_file']+' / '+c['name'],target_file=c['target_file'],
+                         status='wrong_answer' if folder.parent.name=='101' and i==0 else 'passed',
+                         passed=not(folder.parent.name=='101' and i==0)) for i,c in enumerate(bundle['cases'])]
+        with patch('midterm.grade_suite',side_effect=grade):
+            w.gradeSelected();self.finish_job()
+        table=w.resultTable
+        self.assertEqual([table.horizontalHeaderItem(i).text() for i in range(2)],['학번','이름'])
+        table.selectRow(0)
+        table.sortItems(3,Qt.SortOrder.AscendingOrder)
+        self.assertEqual([table.item(i,0).text() for i in range(2)],['101','102'])
+        self.assertEqual([table.item(i,3).text() for i in range(2)],['8 / 10','10 / 10'])
+        table.sortItems(3,Qt.SortOrder.DescendingOrder)
+        self.assertEqual([table.item(i,0).text() for i in range(2)],['102','101'])
+        self.assertEqual(w.resultStudent(table.currentRow()),'101')
+        w.case_report.override_midterm_score('101','copy.c',10,'teacher','정렬 후 점수 조정')
+        w.refreshResultsTable()
+        self.assertEqual(w.resultStudent(table.currentRow()),'101')
+        self.assertEqual(table.item(table.currentRow(),3).text(),'10 / 10')
+        self.assertIn('정렬 후 점수 조정',w.resultDetail.toPlainText())
 
     def test_one_file_dispatch_manual_sources_and_invalid_profile(self):
         w = self.window
@@ -230,11 +258,13 @@ class MidtermGuiTests(unittest.TestCase):
         self.assertEqual(option.text,'101 · 첫 학생')
         w.comboProblem.setCurrentIndex(w.comboProblem.findData('copy.c'))
         w.openQualitative();review=w.qualitative_window;self.addCleanup(review.close)
-        self.assertEqual(review.table.item(0,0).text(),'101 · 첫 학생')
+        self.assertEqual(review.table.item(0,0).text(),'101')
+        self.assertEqual(review.table.item(0,1).text(),'첫 학생')
         self.assertEqual(review.submissions[0]['student'],'101')
         self.assertEqual(Path(review.submissions[0]['path']).parent.name,'101')
         review.student_search.setText('102')
-        self.assertEqual(review.table.item(review.table.currentRow(),0).text(),'102 · 둘째 학생')
+        self.assertEqual(review.table.item(review.table.currentRow(),0).text(),'102')
+        self.assertEqual(review.table.item(review.table.currentRow(),1).text(),'둘째 학생')
         review.close()
         # Grading results keep the ID as the key while the table, log and CSV/JSON carry the name.
         (w.radioWin if os.name == 'nt' else w.radioLinux).setChecked(True)
@@ -243,7 +273,8 @@ class MidtermGuiTests(unittest.TestCase):
             w.gradeSelected();warning.assert_not_called();self.finish_job()
         self.assertEqual(w.case_report.context['student_names'],{'101':'첫 학생','102':'둘째 학생'})
         self.assertEqual([r['student_name'] for r in w.results],['첫 학생','둘째 학생'])
-        self.assertEqual(w.resultTable.item(0,0).text(),'101 · 첫 학생')
+        self.assertEqual(w.resultTable.item(0,0).text(),'101')
+        self.assertEqual(w.resultTable.item(0,1).text(),'첫 학생')
         self.assertEqual(w.resultStudent(0),'101')
         w.resultTable.selectRow(1)
         self.assertIn('102 · 둘째 학생',w.resultDetail.toPlainText())
@@ -282,8 +313,8 @@ class MidtermGuiTests(unittest.TestCase):
         self.assertEqual(len(w.results), 36)
         self.assertTrue(all(row['passed'] for row in w.results), [(r['case'], r.get('message')) for r in w.results if not r['passed']])
         self.assertEqual({r['target_file'] for r in w.results}, set(TARGETS))
-        self.assertEqual(w.resultTable.item(0, 10).text(), '36 / 36')
-        self.assertEqual(w.resultTable.item(0, 2).text(), '75 / 75')
+        self.assertEqual(w.resultTable.item(0, 11).text(), '36 / 36')
+        self.assertEqual(w.resultTable.item(0, 3).text(), '75 / 75')
         work = self.root / 'origin/system_3_2026/101/midterm'
         self.assertEqual((work / 'db.dat').read_bytes(), b'original student database')
 
