@@ -138,6 +138,7 @@ def build_main_view(w):
     w.btnOpenReport = QPushButton('결과 폴더 열기'); w.btnOpenReport.setEnabled(False); w.btnOpenReport.clicked.connect(w.openReportFolder)
     w.btnReadReport = QPushButton('이전 결과 열기'); w.btnReadReport.clicked.connect(w.readCaseReport)
     w.btnExport = QPushButton('CSV / JSON 내보내기'); w.btnExport.clicked.connect(w.exportResults)
+    w.btnExport.setToolTip('CSV는 과거 실행 조회 중에도 현재 분반·장·문제의 최신 점수표를 학생당 한 행으로 저장합니다.')
     detail_layout.addWidget(w.btnExport)
     close_detail = QPushButton('닫기'); close_detail.clicked.connect(w.detailDialog.close); detail_layout.addWidget(close_detail)
     w.btnDetails = QPushButton('상세 근거 보기'); w.btnDetails.clicked.connect(w.openResultDetails)

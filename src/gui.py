@@ -1159,13 +1159,20 @@ class Gui(QMainWindow):
             self.displayLog('저장 실패: ' + html.escape(str(exc)))
 
     def exportResults(self):
-        if not self.display_rows:
-            QMessageBox.information(self, 'Export', 'Run grading first.')
+        if not self.display_rows and not self.result_reviews and not self.listStudents.count():
+            QMessageBox.information(self, '내보내기', '분반과 문제를 선택하세요.')
             return
-        path, _ = QFileDialog.getSaveFileName(self, 'Export results', 'results.csv', 'CSV (*.csv);;JSON (*.json)')
+        path, _ = QFileDialog.getSaveFileName(self, '점수표 내보내기', 'latest_gradebook.csv',
+                                             '최신 점수표 CSV (*.csv);;JSON (*.json)')
         if path:
+            from peewee import PeeweeException
             try:
-                if self.gradebook and Path(path).suffix.lower() == '.json':
+                if Path(path).suffix.lower() == '.csv':
+                    from gradebook_csv import export_latest_csv
+                    count = export_latest_csv(path, self.selectedResultScope(),
+                        [self.listStudents.item(i).text() for i in range(self.listStudents.count())], self.studentNames())
+                    self.displayLog(f'최신 점수표 CSV 저장 · {count}명 · ' + html.escape(path))
+                elif self.gradebook:
                     from core.record import atomic_text
                     document = self.gradebook.document()
                     document['qualitative_reviews'] = self.result_reviews
@@ -1175,16 +1182,12 @@ class Gui(QMainWindow):
                         document['summaries'] = self.gradebook.summaries()
                     atomic_text(path, json.dumps(document, ensure_ascii=False, indent=2))
                 elif 'midterm_scoring' in self.display_context:
-                    if Path(path).suffix.lower() == '.csv':
-                        from midterm_scoring import export_scores
-                        export_scores(path, self.midtermScores())
-                    else:
-                        from core.record import atomic_text
-                        document = self.case_report.saved()
-                        atomic_text(path, json.dumps(document, ensure_ascii=False, indent=2))
+                    from core.record import atomic_text
+                    document = self.case_report.saved()
+                    atomic_text(path, json.dumps(document, ensure_ascii=False, indent=2))
                 else:
                     save_report(path, self.display_rows)
-            except OSError as exc:
+            except (OSError, ValueError, PeeweeException) as exc:
                 QMessageBox.warning(self, 'Export', str(exc))
 
     def openProblemGrading(self):

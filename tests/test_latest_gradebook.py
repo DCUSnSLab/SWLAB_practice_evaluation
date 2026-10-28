@@ -197,6 +197,117 @@ class LatestGradebookTests(unittest.TestCase):
             rows = list(csv.DictReader(stream))
         self.assertEqual(rows[0]['final_score'], '65.0')
         self.assertEqual(rows[1]['final_score'], '75.0')
+        self.assertEqual(len(rows), 3)
+
+    def test_csv_combines_latest_problem_marks_reviews_and_adjustments_even_during_history_view(self):
+        context, original = self.save('whole', 20)
+        window = self.window()
+        from reports import CaseReport
+        report, document = CaseReport.load('whole'); window.showSavedRun(report, document)
+        context, rows = self.save('retry', 21, 'copy.c', ('101',), False)
+        db.save_run('retry', context, rows, 'completed', overrides={'101': {'copy.c': [
+            dict(previous_score=0, score=6, reviewer='teacher', reason='원본 확인\n파일 확인',
+                 at='2026-10-22T00:00:00+00:00')]}})
+        review = dict(self.scope, student='101', student_name='첫 학생', problem='copy.c', status='confirmed',
+                      overall=80, suggested_score=7, max_score=10, final_score=8, resource_score=6,
+                      summary='정성평가 총평\r\n두 번째 줄', reviewer_note='검토\n확정',
+                      created_at='2026-10-21T00:00:00+00:00', criteria=[
+                          dict(id='correctness', score=8, applicable=True),
+                          dict(id='resource_files', score=6, applicable=True),
+                          dict(id='resource_memory', score=None, applicable=False)])
+        db.save_qualitative('copy_review', {'submissions': [review]}, [review])
+        ai = dict(review, problem='bookquery.c', status='ai_proposed', final_score=None, suggested_score=9)
+        db.save_qualitative('query_review', {'submissions': [ai]}, [ai])
+        exam = dict(review, problem='__all__', suggested_score=60, max_score=75, final_score=61)
+        db.save_qualitative('exam_review', {'submissions': [exam]}, [exam])
+        path = self.root / 'latest_with_reviews.csv'
+        with patch('gui.QFileDialog.getSaveFileName', return_value=(str(path), '')):
+            window.exportResults()
+        self.assertFalse(window.latest_view)
+        self.assertEqual(window.resultTable.item(0, 3).text(), '75 / 75')
+        self.assertTrue(path.read_bytes().startswith(b'\xef\xbb\xbf'))
+        self.assertEqual(len(path.read_text(encoding='utf-8-sig').splitlines()), 4)
+        with path.open(encoding='utf-8-sig', newline='') as stream:
+            exported = {r['student']: r for r in csv.DictReader(stream)}
+        first = exported['101']
+        self.assertEqual((first['auto_score'], first['final_score']), ('65.0', '71.0'))
+        self.assertEqual((first['copy.c_auto'], first['copy.c_adjusted'], first['copy.c_final']), ('0.0', '6.0', '6.0'))
+        self.assertEqual(first['copy.c_adjustment_reason'], '원본 확인 파일 확인')
+        self.assertEqual(first['copy.c_qualitative_overall'], '80')
+        self.assertEqual(first['copy.c_qualitative_suggested_score'], '7')
+        self.assertEqual(first['copy.c_qualitative_final_score'], '8')
+        self.assertEqual(first['bookquery.c_qualitative_status'], 'ai_proposed')
+        self.assertEqual(first['bookquery.c_qualitative_final_score'], '')
+        self.assertEqual(first['exam_qualitative_final_score'], '61')
+        self.assertEqual(first['copy.c_qualitative_resource_memory_score'], '')
+        self.assertEqual(first['copy.c_qualitative_resource_memory_applicable'], 'False')
+        self.assertEqual(first['copy.c_qualitative_correctness_score'], '8')
+        self.assertEqual(exported['102']['final_score'], '75.0')
+        self.assertEqual(exported['103']['final_score'], '')
+        self.assertEqual(exported['103']['copy.c_qualitative_status'], 'not_reviewed')
+
+    def test_qualitative_only_csv_keeps_roster_missing_scores_zero_and_review_only_student(self):
+        zero = dict(self.scope, student='101', student_name='=1+1', problem='copy.c', status='ai_proposed',
+                    overall=0, suggested_score=0, max_score=10, final_score=None, summary='\t=SUM(A1:A3)', criteria=[])
+        error = dict(zero, student='102', student_name='둘째 학생', status='error', suggested_score=None,
+                     overall=None, message='서버\n연결 실패')
+        extra = dict(zero, student='00104', student_name='추가 학생', status='confirmed', final_score=0)
+        db.save_qualitative('reviews', {'submissions': [zero]}, [zero, error, extra])
+        window = self.window()
+        self.assertIsNone(window.gradebook)
+        self.assertEqual(window.display_rows, [])
+        path = self.root / 'only_reviews.csv'
+        with patch('gui.QFileDialog.getSaveFileName', return_value=(str(path), '')):
+            window.exportResults()
+        with path.open(encoding='utf-8-sig', newline='') as stream:
+            rows = {r['student']: r for r in csv.DictReader(stream)}
+        self.assertEqual(set(rows), {'101', '102', '103', '00104'})
+        self.assertEqual(len(path.read_text(encoding='utf-8-sig').splitlines()), 5)
+        self.assertEqual(rows['101']['student_name'], "'=1+1")
+        self.assertEqual(rows['101']['copy.c_qualitative_summary'], "'=SUM(A1:A3)")
+        self.assertEqual(rows['101']['copy.c_qualitative_suggested_score'], '0')
+        self.assertEqual(rows['101']['copy.c_qualitative_final_score'], '')
+        self.assertEqual(rows['00104']['copy.c_qualitative_final_score'], '0')
+        self.assertEqual(rows['00104']['student_name'], '추가 학생')
+        self.assertEqual(rows['102']['copy.c_qualitative_status'], 'error')
+        self.assertEqual(rows['102']['copy.c_qualitative_message'], '서버 연결 실패')
+        self.assertEqual(rows['102']['copy.c_qualitative_suggested_score'], '')
+        self.assertTrue(all(row['final_score'] == '' for row in rows.values()))
+
+    def test_csv_single_file_exports_only_selected_scope_and_preserves_zero_adjustment(self):
+        context, rows = self.save('copy', 20, 'copy.c')
+        db.save_run('copy', context, rows, 'completed', overrides={'101': {'copy.c': [
+            dict(previous_score=10, score=0, reviewer='teacher', reason='0점 확인', at='2026-10-21T00:00:00+00:00')]}})
+        window = self.window()
+        window.comboProblem.setCurrentIndex(window.comboProblem.findData('copy.c'))
+        path = self.root / 'one_file.csv'
+        with patch('gui.QFileDialog.getSaveFileName', return_value=(str(path), '')):
+            window.exportResults()
+        with path.open(encoding='utf-8-sig', newline='') as stream:
+            reader = csv.DictReader(stream); rows = list(reader)
+            self.assertFalse(any(column.startswith('bookquery.c_') for column in reader.fieldnames))
+        self.assertEqual(rows[0]['copy.c_adjusted'], '0.0')
+        self.assertEqual(rows[0]['final_score'], '0.0')
+        self.assertEqual(rows[0]['max_score'], '10')
+
+    def test_regular_problem_csv_is_also_one_row_per_student_without_invented_points(self):
+        from gradebook_csv import export_latest_csv
+        scope = dict(class_name='system_3_2026', chapter='chap1', problem='p1')
+        context = dict(scope, students=['101', '102'], case_count=2)
+        cases = [dict(student=s, case=str(i), passed=True, status='passed') for s in ('101', '102') for i in range(2)]
+        db.save_run('regular', context, cases, 'completed')
+        review = dict(scope, student='103', student_name='정성만', status='confirmed', overall=70,
+                      suggested_score=6, max_score=10, final_score=7, criteria=[])
+        db.save_qualitative('regular_review', {'submissions': [review]}, [review])
+        path = self.root / 'regular.csv'
+        self.assertEqual(export_latest_csv(path, scope, ['101', '102', '103']), 3)
+        with path.open(encoding='utf-8-sig', newline='') as stream:
+            rows = list(csv.DictReader(stream))
+        self.assertEqual(rows[0]['passed_cases'], '2')
+        self.assertEqual(rows[0]['total_cases'], '2')
+        self.assertEqual(rows[0]['auto_score'], '')
+        self.assertEqual(rows[2]['student_name'], '정성만')
+        self.assertEqual(rows[2]['p1_qualitative_final_score'], '7')
 
     def test_returning_from_other_problem_history_never_reuses_its_rows_in_an_empty_scope(self):
         context, rows = self.save('whole', 20)
