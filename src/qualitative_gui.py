@@ -16,7 +16,8 @@ from paths import ROOT
 from student_names import fill_student_names
 from table_items import SortableItem, student_sort_value
 from qualitative import (DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,confirm_reviews,save_reviews,load_reviews,
-    archive_reviews,load_saved_reviews)
+    archive_reviews,load_saved_reviews,collect_sources)
+from submission_state import SubmissionAbsent
 from qualitative_rubric import (SCORING_VERSION, RESOURCE_IDS, resource_scope,
     validate_dcucode_rubric)
 
@@ -353,7 +354,7 @@ class QualitativeWindow(QWidget):
         self.batch_confirm_button.setText(f'선택 학생 일괄 승인 ({pending}명)')
         self.batch_confirm_button.setEnabled(not busy and pending>0)
         current=self.current_index()
-        self.confirm_button.setEnabled(not busy and current in indices and self.rows[current]['status'] in ('ai_proposed','confirmed'))
+        self.confirm_button.setEnabled(not busy and current in indices and self.rows[current]['status'] in ('ai_proposed','confirmed','submission_zero'))
         self.update_search_status()
 
     def selection_changed(self):
@@ -407,14 +408,23 @@ class QualitativeWindow(QWidget):
             rules=self.read_rubric();problem=self.problem_text.toPlainText()
             validate_dcucode_rubric(rules)
             if not problem.strip() or len(problem)>30000:raise ValueError('문제 요구사항을 1–30,000자로 입력하세요.')
-            client=LLMClient(self.url.text().strip(),self.model.text().strip())
+            try:
+                client=LLMClient(self.url.text().strip(),self.model.text().strip())
+            except ValueError as config_error:
+                # Pure submission checks can finish without any model configuration.
+                for submission in submissions:
+                    try:collect_sources(submission['path'],submission.get('sources'))
+                    except SubmissionAbsent:continue
+                    except (OSError,ValueError):raise config_error
+                    else:raise config_error
+                client=None
         except (ValueError,AttributeError) as error:
             self.status.setText(str(error));return
         self.completed_count=0
         self.cancel_requested=False
         self.archive=ROOT/'reports'/f'qualitative_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:6]}.json'
         self.context={'problem':problem,'rubric':rules,'submissions':[{k:v for k,v in s.items() if k!='path'} for s in submissions],
-                      'model':client.model,'endpoint':client.base_url,'run_state':'running',
+                      'model':client.model if client else None,'endpoint':client.base_url if client else None,'run_state':'running',
                       'scoring_version':SCORING_VERSION,'problem_points':self.problem_points.value(),
                       'resource_policy':self.resource_policy()}
         self.context['slide_selection']={k:v for k,v in (self.slide_selection or {}).items() if k!='text'}
@@ -443,7 +453,8 @@ class QualitativeWindow(QWidget):
     def refresh_rows(self):
         selected={self.visual_key(i.row()) for i in self.table.selectionModel().selectedRows()}
         current=self.visual_key(self.table.currentRow());old_count=self.table.rowCount()
-        labels={'ai_proposed':'AI 제안','confirmed':'교수자 확정','error':'평가 실패','not_reviewed':'미평가'}
+        from result_reviews import LABELS
+        labels=LABELS
         self.refreshing_table=True
         with QSignalBlocker(self.table):
             self.table.setSortingEnabled(False)
@@ -496,7 +507,8 @@ class QualitativeWindow(QWidget):
                 try:stamp=datetime.fromisoformat(run['created_at']).astimezone().strftime('%Y-%m-%d %H:%M')
                 except (TypeError,ValueError):stamp=run['id']
                 combo.addItem(f"{stamp} · {run['problem'] or '문제 없음'} · {states.get(run['state'],run['state'] or '')} · "
-                              f"{run['student_count']}명 (확정 {run['confirmed']})",run['id'])
+                              f"{run['student_count']}명 (확정 {run['confirmed']})" +
+                              (f" · 제출 상태 0점 {run['zeroed']}명" if run['zeroed'] else ''),run['id'])
             if current is not None and combo.findData(current)>=0:combo.setCurrentIndex(combo.findData(current))
         combo.setToolTip(f'같은 분반·문제의 저장된 정성평가 {len(runs)}개 · 선택하면 제안·확정 점수와 근거를 다시 불러옵니다.')
 

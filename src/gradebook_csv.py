@@ -33,7 +33,7 @@ def csv_rows(book, reviews):
         columns += [f'{prefix(target)}_{key}' for key in ('auto', 'final', 'max', 'adjusted')]
     review_problems = list(dict.fromkeys([*book.targets, *(r.get('problem') for r in reviews)]))
     review_fields = ['status', 'overall', 'suggested_score', 'max_score', 'final_score', 'resource_score',
-                     'summary', 'reviewer_note', 'message', 'run_id', 'saved_at']
+                     'summary', 'reviewer_note', 'message', 'run_id', 'saved_at', 'submission_issue']
     criterion_ids = list(dict.fromkeys([*AXES, *RESOURCE_IDS.values(),
         *(c['id'] for r in reviews for c in r.get('criteria', []))]))
     for problem in review_problems:
@@ -64,9 +64,9 @@ def csv_rows(book, reviews):
         for review in by_student.get(student, []):
             base = prefix(review.get('problem')) + '_qualitative_'
             row.update({base + key: review.get(key) for key in review_fields})
-            if review['status'] != 'confirmed':
+            if review['status'] not in ('confirmed', 'submission_zero'):
                 row[base + 'final_score'] = None
-            if review['status'] not in ('ai_proposed', 'confirmed'):
+            if review['status'] not in ('ai_proposed', 'confirmed', 'submission_zero'):
                 for key in ('overall', 'suggested_score', 'resource_score'):
                     row[base + key] = None
                 continue

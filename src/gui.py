@@ -929,7 +929,8 @@ class Gui(QMainWindow):
                     lines.append(f'점수 조정: {adjustment["previous_score"]} → {adjustment["score"]} · {adjustment["reviewer"]} · {adjustment["reason"]} · {adjustment["at"]}')
         labels = {'passed': '통과', 'wrong_answer': '오답', 'compile_error': '컴파일 오류',
                   'runtime_error': '실행 오류', 'timeout': '시간 초과', 'output_limit': '출력 제한 초과',
-                  'missing': '제출 경로 없음', 'error': '채점 오류', 'no_tests': '케이스 없음', 'needs_review': '검토 필요'}
+                  'missing': '제출 경로 없음', 'missing_source': '제출 없음 · 0점', 'empty_source': '빈 제출 · 0점',
+                  'error': '채점 오류', 'no_tests': '케이스 없음', 'needs_review': '검토 필요'}
         def display(value):
             return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
         for row in self.display_rows:

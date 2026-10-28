@@ -355,6 +355,7 @@ def list_qualitative(class_name=None, chapter=None, problem=None, limit=100):
                              updated_at=run.updated_at, archive=run.archive, student_count=reviews.count(),
                              confirmed=reviews.where(QualitativeReview.status == 'confirmed').count(),
                              proposed=reviews.where(QualitativeReview.status == 'ai_proposed').count(),
+                             zeroed=reviews.where(QualitativeReview.status == 'submission_zero').count(),
                              failed=reviews.where(QualitativeReview.status == 'error').count()))
     return runs
 
@@ -388,7 +389,7 @@ def latest_qualitative_reviews(class_name, chapter, problems):
             if (row.get('class_name', run.class_name), row.get('chapter', run.chapter),
                     row.get('problem', run.problem)) != (class_name, chapter, run.problem):
                 continue
-            usable = row.get('status') in ('ai_proposed', 'confirmed') and review.suggested_score is not None
+            usable = row.get('status') in ('ai_proposed', 'confirmed', 'submission_zero') and review.suggested_score is not None
             stamp = row.get('reviewed_at') or row.get('created_at') or run.created_at
             rank = (usable, timestamp(stamp), timestamp(run.updated_at), run.id, review.position)
             key = (review.student, run.problem)
@@ -446,7 +447,8 @@ def main(argv=None):
     elif options.command == 'reviews':
         for run in list_qualitative():
             print(f"{run['id']}  {run['class_name']}  {run['chapter']}/{run['problem']}  {run['state']}  "
-                  f"학생 {run['student_count']}명 · 확정 {run['confirmed']}명 · 제안 {run['proposed']}명 · 실패 {run['failed']}명")
+                  f"학생 {run['student_count']}명 · 확정 {run['confirmed']}명 · 제안 {run['proposed']}명 · "
+                  f"제출 상태 0점 {run['zeroed']}명 · 실패 {run['failed']}명")
 
 
 if __name__ == '__main__':

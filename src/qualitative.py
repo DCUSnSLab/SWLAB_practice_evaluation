@@ -8,8 +8,10 @@ import json
 import math
 from pathlib import Path
 import re
+import stat
 from llm_cases import LLMClient
 from paths import safe_path
+from submission_state import SubmissionAbsent, usable_sources
 from qualitative_rubric import (DEFAULT_RUBRIC, AXES, RESOURCE_IDS, SCORING_VERSION,
     resource_scope as resolve_resource_scope, compute_scores, validate_dcucode_rubric)
 
@@ -62,10 +64,14 @@ def validate_rubric(rubric):
 def collect_sources(folder, patterns=None):
     """Read the submission's sources; `patterns` (file names or globs) restricts them, e.g. ['copy.c', '*.h']."""
     folder = Path(folder).resolve()
-    if not folder.is_dir():
-        raise ValueError('제출 폴더가 없습니다.')
     if patterns is not None and (not isinstance(patterns,list) or not patterns or not all(isinstance(p,str) and p for p in patterns)):
         raise ValueError('전송 파일 목록 형식 오류')
+    try:
+        is_directory = stat.S_ISDIR(folder.stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        is_directory = False
+    if not is_directory:
+        raise SubmissionAbsent('missing_folder', '제출 폴더가 없습니다.')
     sources = {}
     size = 0
     for path in sorted(folder.rglob('*')):
@@ -84,14 +90,8 @@ def collect_sources(folder, patterns=None):
         if size > 120000 or len(sources) >= 40:
             raise ValueError('소스가 120KB 또는 40개 파일을 초과합니다. 문제 폴더 범위를 줄이세요.')
         sources[relative.as_posix()] = path.read_text(encoding='utf-8-sig')
-    if patterns is not None:
-        # Headers alone are not a submission: at least one explicitly named file must exist.
-        named = [p for p in patterns if not any(ch in p for ch in '*?[')]
-        if named and not any(name in sources for name in named):
-            raise ValueError('평가 대상 파일이 없습니다: ' + ', '.join(named))
-    if not sources:
-        raise ValueError('평가할 C/Python 소스 파일이 없습니다.')
-    return sources
+    named = [p for p in patterns or [] if not any(ch in p for ch in '*?[')]
+    return usable_sources(sources, named)
 
 
 def validate_review(value, rubric, sources, *, total_score=100, resource_scope=None):
@@ -153,10 +153,29 @@ def validate_review(value, rubric, sources, *, total_score=100, resource_scope=N
     return output
 
 
+def zero_submission(problem, rubric, issue, *, total_score=100, resource_policy=None):
+    """A deterministic zero authorized by submission policy, with no invented code evidence."""
+    reason = str(issue)
+    raw = dict(summary=reason + ' 제출 상태 기준으로 0점 처리했습니다.', strengths=[],
+               improvements=['평가 대상 소스 파일에 풀이를 작성해 제출하세요.'], uncertainties=[], criteria=[
+                   dict(id=rule['id'], score=0, assessment=reason,
+                        suggestion='해당 문제의 풀이를 작성해 제출하세요.', evidence=[]) for rule in rubric])
+    result = validate_review(raw, rubric, {}, total_score=total_score,
+        resource_scope=resolve_resource_scope(problem, {}, resource_policy))
+    result.update(status='submission_zero', final_score=0, reviewer_note='제출 상태에 따른 자동 0점',
+                  message=reason, submission_issue=issue.kind, created_at=datetime.now(timezone.utc).isoformat(),
+                  source_sha256={})
+    return result
+
+
 def review_sources(client, problem, rubric, sources, *, total_score=100, resource_policy=None):
     validate_rubric(rubric)
     if not problem.strip() or len(problem) > 30000:
         raise ValueError('문제 설명은 1–30,000자로 입력하세요.')
+    try:
+        sources = usable_sources(sources)
+    except SubmissionAbsent as issue:
+        return zero_submission(problem, rubric, issue, total_score=total_score, resource_policy=resource_policy)
     numbered = {name:'\n'.join(f'{n}: {line}' for n,line in enumerate(text.splitlines(),1)) for name,text in sources.items()}
     validate_dcucode_rubric(rubric)
     scope = resolve_resource_scope(problem, sources, resource_policy)
@@ -183,6 +202,8 @@ def review_sources(client, problem, rubric, sources, *, total_score=100, resourc
 
 def review_batch(client, problem, rubric, submissions, cancelled=lambda:False, *, total_score=100, resource_policy=None):
     validate_rubric(rubric)
+    if not problem.strip() or len(problem) > 30000:
+        raise ValueError('문제 설명은 1–30,000자로 입력하세요.')
     for context in submissions:
         if cancelled():
             break
@@ -190,14 +211,16 @@ def review_batch(client, problem, rubric, submissions, cancelled=lambda:False, *
         try:
             sources = collect_sources(context['path'],context.get('sources'))
             row.update(review_sources(client,problem,rubric,sources, total_score=total_score, resource_policy=resource_policy))
+        except SubmissionAbsent as issue:
+            row.update(zero_submission(problem, rubric, issue, total_score=total_score, resource_policy=resource_policy))
         except (OSError,ValueError,TypeError,KeyError,AttributeError) as error:
             row.update(status='error',message=str(error),suggested_score=None,final_score=None)
         yield row
 
 
 def confirm_review(row, score, note):
-    if row.get('status') not in ('ai_proposed','confirmed'):
-        raise ValueError('성공한 AI 평가만 확정할 수 있습니다.')
+    if row.get('status') not in ('ai_proposed','confirmed','submission_zero'):
+        raise ValueError('점수가 있는 평가 결과만 확정할 수 있습니다.')
     if isinstance(score,bool) or not isinstance(score,(int,float)) or not math.isfinite(score) or not 0 <= score <= row['max_score']:
         raise ValueError('확정 점수가 배점 범위를 벗어났습니다.')
     if not isinstance(note,str) or not note.strip():
@@ -228,7 +251,7 @@ def save_reviews(path, rows, context, *, csv_detail=False):
         with temporary.open('w',encoding='utf-8-sig',newline='') as stream:
             fields = ['class_name','student','student_name','chapter','problem','status','suggested_score','max_score','final_score',
                       'overall','resource_score','overall_denominator','partial_denominator','scoring_version',
-                      'summary','reviewer_note','model','created_at','reviewed_at','message']
+                      'summary','reviewer_note','model','created_at','reviewed_at','message','submission_issue']
             criterion_ids = list(dict.fromkeys(c['id'] for row in rows for c in row.get('criteria',[])))
             if csv_detail:
                 fields += ['criterion','criterion_score','criterion_max','applicable','assessment','suggestion','reason','evidence',
@@ -292,7 +315,7 @@ def validate_report(data):
     if not isinstance(data,dict) or data.get('version') not in (1,2) or not isinstance(data.get('context'),dict) or not isinstance(data.get('results'),list):
         raise ValueError('정성평가 보고서 형식이 아닙니다.')
     for row in data['results']:
-        if not isinstance(row,dict) or row.get('status') not in ('error','ai_proposed','confirmed','not_reviewed'):
+        if not isinstance(row,dict) or row.get('status') not in ('error','ai_proposed','confirmed','not_reviewed','submission_zero'):
             raise ValueError('잘못된 평가 행입니다.')
         if row['status']=='not_reviewed':
             if any(row.get(key) is not None for key in ('suggested_score','final_score')) or row.get('criteria'):
@@ -358,7 +381,11 @@ def validate_report(data):
         elif round(sum(c['score'] for c in criteria),2) != row['suggested_score'] or round(sum(c['max_score'] for c in criteria),2) != row['max_score']:
             raise ValueError('항목 점수 합계가 총점과 다릅니다.')
         final = row.get('final_score')
-        if row['status'] == 'confirmed':
+        if row['status'] == 'submission_zero':
+            if (type(final) not in (int, float) or final != 0 or row['suggested_score'] != 0 or row.get('overall') != 0
+                    or row.get('submission_issue') not in ('missing_folder','missing_file','no_sources','empty_file')):
+                raise ValueError('제출 상태 자동 0점 기록이 올바르지 않습니다.')
+        elif row['status'] == 'confirmed':
             if isinstance(final,bool) or not isinstance(final,(int,float)) or not math.isfinite(final) or not 0 <= final <= row['max_score']:
                 raise ValueError('확정 점수 형식 오류')
         elif final is not None:

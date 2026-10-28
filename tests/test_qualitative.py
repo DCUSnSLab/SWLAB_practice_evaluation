@@ -78,8 +78,8 @@ class QualitativeTests(unittest.TestCase):
             contexts=[{'student':'missing','path':str(Path(temp)/'missing')},{'student':'ok','path':temp}]
             with patch('qualitative.review_sources',return_value={'status':'ai_proposed','suggested_score':50}):
                 rows=list(review_batch(LLMClient('https://example.invalid', 'test-model'),'problem',DEFAULT_RUBRIC,contexts))
-            self.assertEqual([r['status'] for r in rows],['error','ai_proposed'])
-            self.assertIsNone(rows[0]['suggested_score'])
+            self.assertEqual([r['status'] for r in rows],['submission_zero','ai_proposed'])
+            self.assertEqual(rows[0]['suggested_score'],0)
             self.assertEqual(list(review_batch(LLMClient('https://example.invalid', 'test-model'),'problem',DEFAULT_RUBRIC,contexts,cancelled=lambda:True)),[])
 
     def test_batch_sends_only_requested_files_per_submission(self):
@@ -92,7 +92,7 @@ class QualitativeTests(unittest.TestCase):
             with patch('qualitative.review_sources',side_effect=review):
                 rows=list(review_batch(LLMClient('https://example.invalid','test-model'),'problem',DEFAULT_RUBRIC,contexts))
             self.assertEqual(seen,[['book.h','copy.c'],['book.h','copy.c','scratch.c']])
-            self.assertEqual([r['status'] for r in rows],['ai_proposed','error','ai_proposed'])
+            self.assertEqual([r['status'] for r in rows],['ai_proposed','submission_zero','ai_proposed'])
             self.assertIn('searchbook.c',rows[1]['message'])
             self.assertEqual(rows[0]['sources'],['copy.c','*.h'])
             with self.assertRaises(ValueError):collect_sources(temp,[])

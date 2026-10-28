@@ -66,7 +66,7 @@ class MidtermScoringTests(unittest.TestCase):
                      for c in self.bundle['cases']]
         self.assertIsNone(self.scores()['final_score'])
 
-    def test_missing_required_filename_is_zero_but_missing_repository_is_unresolved(self):
+    def test_missing_required_filename_and_missing_repository_are_both_zero(self):
         with tempfile.TemporaryDirectory() as temp:
             bundle = load_suite('bookupdate.c')
             rows = grade_suite(temp, bundle)
@@ -75,7 +75,7 @@ class MidtermScoringTests(unittest.TestCase):
             self.assertEqual(scored['final_score'], 0)
             self.assertEqual(scored['max_score'], 10)
             rows = grade_suite(Path(temp) / 'missing', bundle)
-            self.assertIsNone(score_students([dict(r, student='101') for r in rows], context)[0]['final_score'])
+            self.assertEqual(score_students([dict(r, student='101') for r in rows], context)[0]['final_score'], 0)
 
     def test_own_compile_error_is_failure_dependency_compile_error_needs_review(self):
         with tempfile.TemporaryDirectory() as temp:

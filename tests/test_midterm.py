@@ -125,7 +125,7 @@ class MidtermTests(unittest.TestCase):
             root = Path(temp)
             submission = root / 'student'
             (submission / 'midterm').mkdir(parents=True)
-            (submission / 'midterm/bookupdate.c').touch()
+            (submission / 'midterm/bookupdate.c').write_text('int main(void){return 0;}', encoding='utf-8')
             output = root / 'result.json'
             def run_case(folder, case, datasets, profile, config):
                 self.assertEqual(folder, submission / 'midterm')

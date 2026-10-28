@@ -92,15 +92,25 @@ def problem_rows():
 def grade_suite(submission, bundle, runner_config=None):
     """Run a GUI selection directly in midterm/, never in a filename directory."""
     submission = Path(submission)
-    if not submission.is_dir():
-        return [dict(case='Setup', status='missing', passed=False, message=f'Directory not found: {submission}')]
+    from submission_state import source_is_blank
+    import stat
+    try:
+        directory_exists = stat.S_ISDIR(submission.stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        directory_exists = False
     config = {k: v for k, v in (runner_config or {}).items() if k not in ('chapter', 'problem')}
     grader = Grader()
     results = []
-    filenames = {p.name for p in submission.iterdir() if p.is_file()}
+    filenames = {p.name for p in submission.iterdir() if p.is_file()} if directory_exists else set()
+    blank = {name for name in {c['target_file'] for c in bundle['cases']} & filenames
+             if source_is_blank(submission / name)}
     for case in bundle['cases']:
-        if case['target_file'] not in filenames:
+        if not directory_exists:
+            row = dict(passed=False, status='missing_source', message=f'Submission directory missing: {submission}')
+        elif case['target_file'] not in filenames:
             row = dict(passed=False, status='missing_source', message=f'Required exam file missing: {case["target_file"]}')
+        elif case['target_file'] in blank:
+            row = dict(passed=False, status='empty_source', message=f'Exam file is empty: {case["target_file"]}')
         elif case['midterm_kind'] == 'copy':
             row = grader.grade_student(submission, [case], config)[0]
         elif case['midterm_kind'] == 'copy_error':

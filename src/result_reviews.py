@@ -1,5 +1,6 @@
 """Read-only presentation of saved qualitative reviews in the execution results table."""
-LABELS = {'ai_proposed': 'AI 제안', 'confirmed': '교수자 확정', 'error': '평가 실패', 'not_reviewed': '미평가'}
+LABELS = {'ai_proposed': 'AI 제안', 'confirmed': '교수자 확정', 'error': '평가 실패', 'not_reviewed': '미평가',
+          'submission_zero': '제출 상태 0점'}
 HEADERS = ['정성 상태', '정성 품질 /100', '정성 제안 점수', '정성 확정 점수']
 
 
@@ -10,7 +11,7 @@ def cells(reviews, all_problems=False):
     for review in reviews:
         prefix = (('전체' if review.get('problem') == '__all__' else str(review.get('problem') or '문제 없음')) + ': ') if all_problems else ''
         proposed = review.get('suggested_score')
-        final = review.get('final_score') if review.get('status') == 'confirmed' else None
+        final = review.get('final_score') if review.get('status') in ('confirmed', 'submission_zero') else None
         quality = review.get('overall')
         maximum = review.get('max_score')
         values = [LABELS.get(review['status'], review['status']),

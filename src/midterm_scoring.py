@@ -10,11 +10,11 @@ from core.record import atomic_text
 POINTS = {'copy.c': 10, 'bookcreate.c': 5, 'bookquery.c': 10, 'bookupdate.c': 10,
           'sortedbookquery.c': 10, 'searchbook.c': 10, 'sortedbookcreate.c': 20}
 POLICY = 'required_case_ratio'
-KNOWN_FAILURES = {'wrong_answer', 'compile_error', 'runtime_error', 'timeout', 'output_limit', 'missing_source'}
+KNOWN_FAILURES = {'wrong_answer', 'compile_error', 'runtime_error', 'timeout', 'output_limit', 'missing_source', 'empty_source'}
 PROBLEM_LABELS = dict(zip(POINTS, ['1번', '2-(1)', '2-(2)', '2-(3)', '3-(1)', '3-(2)', '3-(3)']))
 FAILURE_LABELS = {'wrong_answer': '출력·파일 불일치', 'compile_error': '컴파일 오류',
                   'runtime_error': '실행 오류', 'timeout': '시간 초과', 'output_limit': '출력 제한 초과',
-                  'missing_source': '지정 파일 없음'}
+                  'missing_source': '지정 파일 없음', 'empty_source': '빈 제출 파일'}
 
 
 def problem_reason(matches, passed, total, known):
