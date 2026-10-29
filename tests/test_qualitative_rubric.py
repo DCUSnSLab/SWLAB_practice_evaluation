@@ -4,7 +4,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from qualitative_rubric import AXES, RESOURCE_IDS, compute_scores, resource_scope
+from qualitative_rubric import (AXES, LEGACY_SCORING_VERSION, RESOURCE_IDS, SCORING_VERSION, compute_scores,
+                                resource_scope)
 
 
 class QualitativeRubricTests(unittest.TestCase):
@@ -16,8 +17,8 @@ class QualitativeRubricTests(unittest.TestCase):
     def test_no_resources_uses_exact_dcucode_formulas(self):
         for points in (5, 10, 20, 75, 100):
             result = compute_scores(self.scores(), points)
-            self.assertEqual(result['overall'], round((8 + 6 + 4 + 10) / 40 * 100))
-            self.assertEqual(result['suggested_partial_score'], round(points * (8 + 10) / 20))
+            self.assertEqual(result['overall'], 70)
+            self.assertEqual(result['suggested_partial_score'], -(-points * (8 + 10) // 20))
             self.assertIsNone(result['resource_score'])
             self.assertEqual(result['partial_denominator'], 20)
 
@@ -43,9 +44,28 @@ class QualitativeRubricTests(unittest.TestCase):
             result = compute_scores(self.scores(core=core, files=resource), 75)
             self.assertEqual(result['suggested_score'], expected)
         result = compute_scores(self.scores(core=(1, 10, 10, 0)), 10)
-        self.assertEqual(result['suggested_score'], round(0.5))
+        self.assertEqual(result['suggested_score'], 1)
         for points in (True, 0, -1, 1.5):
             with self.assertRaises(ValueError): compute_scores(self.scores(), points)
+
+    def test_every_fraction_rounds_up_without_float_error(self):
+        # 22/40*100 is 55.00000000000001 in floating point; a naive ceil would give 56.
+        self.assertEqual(compute_scores(self.scores(core=(6, 5, 5, 6)), 100)['overall'], 55)
+        self.assertEqual(compute_scores(self.scores(core=(6, 5, 5, 6)), 100)['suggested_score'], 60)
+        result = compute_scores(self.scores(core=(8, 5, 5, 7), files=7), 10)
+        self.assertEqual((result['suggested_score'], result['scoring_version']), (8, SCORING_VERSION))
+        result = compute_scores(self.scores(core=(8, 5, 5, 7), files=6, memory=7), 100)
+        self.assertEqual((result['resource_score'], result['suggested_score'], result['overall']), (7, 74, 64))
+        result = compute_scores(self.scores(core=(8, 6, 4, 9), files=7), 100)
+        self.assertEqual((result['overall'], result['suggested_score']), (68, 80))
+
+    def test_legacy_version_reproduces_half_to_even_rounding(self):
+        legacy = compute_scores(self.scores(core=(8, 5, 5, 7), files=6, memory=7), 100, LEGACY_SCORING_VERSION)
+        self.assertEqual((legacy['resource_score'], legacy['suggested_score'], legacy['overall'], legacy['scoring_version']),
+                         (6, 70, 62, LEGACY_SCORING_VERSION))
+        self.assertEqual(compute_scores(self.scores(core=(1, 10, 10, 0)), 10, LEGACY_SCORING_VERSION)['suggested_score'], 0)
+        with self.assertRaises(ValueError):
+            compute_scores(self.scores(), 100, 'unknown')
 
     def test_required_resource_cannot_be_exempted_by_missing_implementation(self):
         examples = [('파일을 읽고 복사한다.', 'files'),

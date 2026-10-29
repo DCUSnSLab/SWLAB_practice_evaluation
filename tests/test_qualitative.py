@@ -201,6 +201,23 @@ class QualitativeTests(unittest.TestCase):
             value=answer();value['criteria'][0][key]=''
             with self.assertRaises(ValueError):validate_review(value,DEFAULT_RUBRIC,{'main.c':'line'})
 
+    def test_rows_saved_before_ceiling_keep_their_original_rounding(self):
+        from qualitative_rubric import LEGACY_SCORING_VERSION,SCORING_VERSION,compute_scores
+        raw=answer();values={'correctness':8,'problem_understanding':7,'resource_files':7}
+        for item in raw['criteria']:item['score']=values.get(item['id'],5)
+        row=validate_review(raw,DEFAULT_RUBRIC,{'main.c':'line'},total_score=10,resource_scope=resource_scope('파일을 읽는다.',{}))
+        self.assertEqual((row['suggested_score'],row['scoring_version']),(8,SCORING_VERSION))
+        legacy=dict(row,**compute_scores(row['criteria'],10,LEGACY_SCORING_VERSION))
+        legacy.update(status='ai_proposed',final_score=None,reviewer_note='')
+        self.assertEqual(legacy['suggested_score'],7)
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp,'old.json')
+            save_reviews(path,[legacy],{'rubric':DEFAULT_RUBRIC})
+            loaded=load_reviews(path)
+            self.assertEqual((loaded['version'],loaded['results'][0]),(2,legacy))
+            save_reviews(path,[dict(legacy,suggested_score=8)],{'rubric':DEFAULT_RUBRIC})
+            with self.assertRaises(ValueError):load_reviews(path)
+
     def test_legacy_report_stays_readable_with_original_score(self):
         row=dict(summary='이전 평가',strengths=[],improvements=[],uncertainties=[],
                  status='ai_proposed',suggested_score=15,max_score=30,final_score=None,reviewer_note='',

@@ -1,7 +1,9 @@
 """DCUCode's four axes, extended with applicable resource lifecycle checks."""
 import re
 
-SCORING_VERSION = 'dcucode_resources_v1'
+LEGACY_SCORING_VERSION = 'dcucode_resources_v1'  # Python round (half to even)
+SCORING_VERSION = 'dcucode_resources_v2'  # every fractional score rounds up
+SCORING_VERSIONS = (LEGACY_SCORING_VERSION, SCORING_VERSION)
 AXES = ('correctness', 'algorithm', 'readability', 'problem_understanding')
 RESOURCE_IDS = {'files': 'resource_files', 'memory': 'resource_memory', 'processes': 'resource_processes'}
 AXIS_CHECKLISTS = {
@@ -72,7 +74,15 @@ def validate_dcucode_rubric(rubric):
     return rubric
 
 
-def compute_scores(criteria, total_score=100):
+def ceil_div(numerator, denominator):
+    """Exact integer ceiling; float division would turn 70.00000000000001 into 71."""
+    return -(-numerator // denominator)
+
+
+def compute_scores(criteria, total_score=100, version=SCORING_VERSION):
+    """Totals for one review; `version` reproduces the rounding a saved row was scored with."""
+    if version not in SCORING_VERSIONS:
+        raise ValueError('지원하지 않는 정성평가 계산 기준입니다.')
     if isinstance(total_score, bool) or not isinstance(total_score, int) or not 1 <= total_score <= 10000:
         raise ValueError('문제 배점은 1–10,000의 정수여야 합니다.')
     by_id = {c['id']: c for c in criteria}
@@ -83,12 +93,18 @@ def compute_scores(criteria, total_score=100):
     active = [by_id[rid]['score'] for rid in RESOURCE_IDS.values() if by_id[rid].get('applicable', True)]
     if any(type(v) is not int or not 0 <= v <= 10 for v in active):
         raise ValueError('적용 자원 문항 점수는 0–10의 정수여야 합니다.')
-    resources = round(sum(active) / len(active)) if active else None
     overall_denominator = 50 if active else 40
     partial_denominator = 30 if active else 20
-    overall = round((sum(core.values()) + (resources or 0)) / overall_denominator * 100)
-    partial = max(0, min(total_score, round(total_score * (core['correctness'] + core['problem_understanding'] + (resources or 0)) / partial_denominator)))
+    if version == LEGACY_SCORING_VERSION:
+        resources = round(sum(active) / len(active)) if active else None
+        overall = round((sum(core.values()) + (resources or 0)) / overall_denominator * 100)
+        partial = round(total_score * (core['correctness'] + core['problem_understanding'] + (resources or 0)) / partial_denominator)
+    else:
+        resources = ceil_div(sum(active), len(active)) if active else None
+        overall = ceil_div((sum(core.values()) + (resources or 0)) * 100, overall_denominator)
+        partial = ceil_div(total_score * (core['correctness'] + core['problem_understanding'] + (resources or 0)), partial_denominator)
+    partial = max(0, min(total_score, partial))
     return dict(overall=overall, suggested_partial_score=partial, suggested_score=partial, max_score=total_score,
                 resource_score=resources, resource_max=10 if active else 0,
                 overall_denominator=overall_denominator, partial_denominator=partial_denominator,
-                scoring_version=SCORING_VERSION)
+                scoring_version=version)

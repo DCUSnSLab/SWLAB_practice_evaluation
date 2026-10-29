@@ -12,7 +12,7 @@ import stat
 from llm_cases import LLMClient
 from paths import safe_path
 from submission_state import SubmissionAbsent, usable_sources
-from qualitative_rubric import (DEFAULT_RUBRIC, AXES, RESOURCE_IDS, SCORING_VERSION,
+from qualitative_rubric import (DEFAULT_RUBRIC, AXES, RESOURCE_IDS, SCORING_VERSION, SCORING_VERSIONS,
     resource_scope as resolve_resource_scope, compute_scores, validate_dcucode_rubric)
 
 PROMPT = '''You review C/Python student code against an instructor's problem and rubric.
@@ -32,9 +32,9 @@ For applicable resources assess success/failure paths, ownership, closing/freein
 Cite only supplied file names and real one-based line numbers. Give concrete assessment and
 actionable suggestion for EVERY applicable criterion, not a full solution. For excluded resources
 state why they are not applicable; do not award full points or penalize their absence.
-The application computes all totals: resources = round(mean of APPLICABLE resource scores);
-overall = round((sum of the 4 DCUCode axes + resources when applicable)/(40 or 50)*100);
-suggested_partial_score = round(problem_points*(correctness+problem_understanding+resources
+The application computes all totals, rounding every fraction UP: resources = ceil(mean of APPLICABLE
+resource scores); overall = ceil((sum of the 4 DCUCode axes + resources when applicable)/(40 or 50)*100);
+suggested_partial_score = ceil(problem_points*(correctness+problem_understanding+resources
 when applicable)/(20 or 30)). Algorithm and readability do not affect suggested partial points.
 Schema: {"summary":"overall feedback","strengths":["..."],"improvements":["..."],
 "uncertainties":["..."],"criteria":[{"id":"rubric id","score":0,
@@ -287,7 +287,7 @@ def save_reviews(path, rows, context, *, csv_detail=False):
 
 
 def report_version(rows, context):
-    return 2 if context.get('scoring_version') == SCORING_VERSION or any(r.get('scoring_version') == SCORING_VERSION for r in rows) else 1
+    return 2 if context.get('scoring_version') in SCORING_VERSIONS or any(r.get('scoring_version') in SCORING_VERSIONS for r in rows) else 1
 
 
 def archive_reviews(path, rows, context):
@@ -337,7 +337,7 @@ def validate_report(data):
         criteria = row.get('criteria')
         if not isinstance(criteria,list) or not criteria:
             raise ValueError('평가 항목이 없습니다.')
-        modern = row.get('scoring_version') == SCORING_VERSION
+        modern = row.get('scoring_version') in SCORING_VERSIONS
         if row.get('scoring_version') is not None and not modern:
             raise ValueError('지원하지 않는 정성평가 계산 기준입니다.')
         for item in criteria:
@@ -375,7 +375,7 @@ def validate_report(data):
                         raise ValueError('자원 적용 여부와 평가 항목이 다릅니다.')
                 if item['applicable'] and not all(isinstance(item.get(k), str) and item[k].strip() for k in ('assessment','suggestion')):
                     raise ValueError('현재 상태 평가와 개선 의견이 필요합니다.')
-            computed = compute_scores(criteria, row['max_score'])
+            computed = compute_scores(criteria, row['max_score'], row['scoring_version'])
             if any(row.get(key) != value for key, value in computed.items()):
                 raise ValueError('저장된 점수가 DCUCode·자원 관리 계산식과 다릅니다.')
         elif round(sum(c['score'] for c in criteria),2) != row['suggested_score'] or round(sum(c['max_score'] for c in criteria),2) != row['max_score']:

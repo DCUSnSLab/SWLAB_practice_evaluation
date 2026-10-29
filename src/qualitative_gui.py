@@ -18,7 +18,7 @@ from table_items import SortableItem, student_sort_value
 from qualitative import (DEFAULT_RUBRIC,validate_rubric,review_batch,confirm_review,confirm_reviews,save_reviews,load_reviews,
     archive_reviews,load_saved_reviews,collect_sources)
 from submission_state import SubmissionAbsent
-from qualitative_rubric import (SCORING_VERSION, RESOURCE_IDS, resource_scope,
+from qualitative_rubric import (SCORING_VERSION, SCORING_VERSIONS, RESOURCE_IDS, resource_scope,
     validate_dcucode_rubric)
 
 
@@ -569,7 +569,7 @@ class QualitativeWindow(QWidget):
             self.detail.setPlainText(row.get('message',''));self.note.clear();self.final_score.setValue(0)
             self.confirm_button.setEnabled(False);return
         parts=[row['summary']]
-        if row.get('scoring_version') == SCORING_VERSION:
+        if row.get('scoring_version') in SCORING_VERSIONS:
             parts.extend([f'종합 품질: {row["overall"]}/100 · 제안 부분점수: {row["suggested_score"]}/{row["max_score"]}',
                 f'자원 관리: {row["resource_score"] if row["resource_score"] is not None else "비적용"} · 종합 분모 {row["overall_denominator"]}, 부분점수 분모 {row["partial_denominator"]}'])
         for item in row['criteria']:
