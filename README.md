@@ -2,6 +2,8 @@
 
 GitHub 제출물을 수집하고 C/Python 실습을 채점하는 PyQt6 데스크톱 앱입니다. Windows + Docker에서 검증했습니다. Linux와 WSL 실행 모드도 제공하며, 시스템 프로그래밍은 기본값인 Docker를 사용하세요.
 
+> 처음 사용한다면 **[처음 설치하기](docs/getting-started.md)** → **[사용법](docs/user-guide.md)** 순서로 보세요. 이 README는 세부 규칙과 참고 자료입니다.
+
 ## 기본 채점 흐름
 
 **AI 케이스 생성 → 기준 코드 검증 또는 직접 검토 → 채점에 추가 → 학생 선택 → 일괄 채점 → 결과 자동 저장** 순서로 사용합니다.
@@ -51,6 +53,8 @@ AI 케이스를 실행하는 데 이 화면을 거칠 필요가 없습니다. �
 [명세 작성·매핑·기록 사용법](docs/manifest-grading.md) · [현재 구현 계획](docs/design-plan.md)
 
 ## 설치 및 실행
+
+새 컴퓨터에 처음 설치할 때는 프로그램 설치·명단·Qwen 설정·기록 이전까지 정리한 [처음 설치하기](docs/getting-started.md)를 따르세요. 요약하면 다음과 같습니다.
 
 Python 3.10 이상, Git, 실행 중인 Docker Desktop이 필요합니다.
 
