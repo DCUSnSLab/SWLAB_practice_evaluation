@@ -63,6 +63,11 @@ class QualitativeSelectionTests(unittest.TestCase):
                         {'submissions':[dict(class_name='python_1_2026',chapter='chap1',problem='prob1')],'run_state':'finished'})
         w.archive.unlink();other.unlink()
         reopened=QualitativeWindow(self.submissions);self.addCleanup(reopened.close)
+        self.assertEqual([r['status'] for r in reopened.rows],['confirmed','ai_proposed','not_reviewed'])
+        self.assertEqual(reopened.rows[0]['final_score'],40)
+        self.assertIn('자동으로 불러왔습니다',reopened.status.text())
+        self.assertEqual(len(db.list_qualitative('system_3_2026','chap1','prob1')),2)
+        self.assertEqual(set(reopened.selected_indices()),{0,1,2})
         self.assertEqual([reopened.run_combo.itemData(i) for i in range(reopened.run_combo.count())],[None,other.stem,first])
         reopened.run_combo.setCurrentIndex(reopened.run_combo.findData(first));reopened.load_saved_run()
         self.assertEqual(reopened.archive.stem,first)
@@ -73,6 +78,19 @@ class QualitativeSelectionTests(unittest.TestCase):
         reopened.run_combo.setCurrentIndex(reopened.run_combo.findData(other.stem));reopened.load_saved_run()
         self.assertEqual(reopened.problem_text.toPlainText(),'다른 문제')
         self.assertEqual(len(reopened.rows),1)
+
+    def test_automatic_restore_preserves_opening_selection_and_adds_new_students(self):
+        from qualitative import archive_reviews
+        row=self.proposed_row(0)
+        archive_reviews(self.root/'reports'/'qualitative_previous.json',[row],
+                        {'problem':'저장된 요구사항','submissions':[row],'rubric':DEFAULT_RUBRIC})
+        reopened=QualitativeWindow([self.submissions[1]])
+        self.addCleanup(reopened.close)
+        self.assertEqual([r['student'] for r in reopened.rows],['101','102'])
+        self.assertEqual(reopened.rows[0]['status'],'ai_proposed')
+        self.assertEqual(reopened.rows[1]['status'],'not_reviewed')
+        self.assertEqual([reopened.rows[i]['student'] for i in reopened.selected_indices()],['102'])
+        self.assertEqual(reopened.problem_text.toPlainText(),'저장된 요구사항')
 
     def select(self,*indices):
         self.window.table.clearSelection()

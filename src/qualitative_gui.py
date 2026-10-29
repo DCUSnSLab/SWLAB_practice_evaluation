@@ -190,7 +190,8 @@ class QualitativeWindow(QWidget):
         self.table.model().layoutChanged.connect(self.table_order_changed)
         self.refresh_rows()
         self.refresh_run_list()
-        self.table.selectAll()
+        self.load_latest_reviews()
+        self.select_submissions(self.submissions)
         self.set_busy(False)
         self.restore_layout()
         self.main_splitter.splitterMoved.connect(self.save_layout)
@@ -518,6 +519,28 @@ class QualitativeWindow(QWidget):
         except (ValueError,TypeError) as error:self.status.setText('불러오기 실패: '+str(error));return
         self.show_report(data,Path(data.get('archive') or ROOT/'reports'/f'{run_id}.json'))
         self.status.setText('DB에서 평가 기록을 불러왔습니다. 검토 후 확정할 수 있습니다.')
+
+    def load_latest_reviews(self):
+        """Restore the latest usable rows without rewriting a historical batch."""
+        import db
+        class_name, chapter, problem = self.run_scope()
+        if not class_name or not chapter or self.run_combo.count() < 2:
+            return
+        try:
+            data = load_saved_reviews(self.run_combo.itemData(1))
+            rows = db.latest_qualitative_reviews(class_name, chapter, [problem])
+            if not rows:
+                return
+            for row in rows:
+                row.pop('run_id', None)
+                row.pop('saved_at', None)
+            data['results'] = rows
+            # Confirmations save a new snapshot; merely opening the window writes nothing.
+            archive = ROOT/'reports'/f"qualitative_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}.json"
+            self.show_report(data, archive)
+            self.status.setText(f'DB에서 학생별 최신 정성평가 {len(rows)}명 기록을 자동으로 불러왔습니다.')
+        except Exception as error:
+            self.status.setText('최신 정성평가 불러오기 실패: '+str(error))
 
     def finished(self):
         self.context['run_state']='error' if self.context.get('error') else ('cancelled' if self.cancel_requested else 'finished')
