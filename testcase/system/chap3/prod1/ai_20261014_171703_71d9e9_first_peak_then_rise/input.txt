@@ -1,3 +1,0 @@
-longest value
-x
-medium

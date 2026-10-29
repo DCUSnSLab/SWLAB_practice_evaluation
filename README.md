@@ -45,6 +45,7 @@ powershell -ExecutionPolicy Bypass -File scripts\create_shortcut.ps1
 | `src/origin/` | 동기화한 학생 제출물 | 제외 |
 | `reports/` | 채점·정성평가 결과 사본(JSON, CSV) | 제외 |
 | `testdata/<연도>/` | 학생 명단 CSV | 새 파일 제외 |
+| `testcase/`, `assignments/system/` | 채점 케이스, 중간고사 문제 세트 | 제외 |
 | `settings.local.json` | Qwen 서버 주소·모델명 | 제외 |
 | `강의자료/` | 강의 원본 PPTX/PDF | 제외 |
 
@@ -71,4 +72,4 @@ Docker 실행까지 확인하려면 먼저 `$env:SWLAB_TEST_DOCKER = '1'`을 설
 
 - 학생 코드는 네트워크가 차단된 Docker 컨테이너 안에서만 실행합니다.
 - Qwen 정성평가를 쓰면 선택한 문제의 학생 소스 코드가 설정한 Qwen 서버로 전송됩니다. 학번·이름 명단은 따로 보내지 않습니다.
-- 학생 명단, DB, 결과 파일, 서버 설정은 Git에 올라가지 않습니다.
+- 학생 명단, 채점 케이스, DB, 결과 파일, 서버 설정은 Git에 올라가지 않습니다.
