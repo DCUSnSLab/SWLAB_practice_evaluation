@@ -1209,6 +1209,40 @@ class Gui(QMainWindow):
             except (OSError, ValueError, PeeweeException) as exc:
                 QMessageBox.warning(self, 'Export', str(exc))
 
+    def exportChapters(self):
+        """Latest gradebook CSV for the chapters the instructor picks, independent of the current view."""
+        from peewee import PeeweeException
+        import db
+        from chapter_picker import ChapterPicker
+        from gradebook_csv import chapter_scopes, export_latest_csv
+        class_name = self.comboClass.currentData()
+        if not class_name:
+            QMessageBox.information(self, '장 골라 CSV 내보내기', '분반을 선택하세요.')
+            return
+        try:
+            recorded = db.recorded_scopes(class_name)
+        except PeeweeException as exc:
+            QMessageBox.warning(self, 'Export', str(exc))
+            return
+        if not recorded:
+            QMessageBox.information(self, '장 골라 CSV 내보내기', '이 분반에는 저장된 채점·정성평가 기록이 없습니다.')
+            return
+        picker = ChapterPicker(class_name, recorded, self.comboChapter.currentText(), self)
+        if picker.exec() != QDialog.DialogCode.Accepted:
+            return
+        chapters = picker.selected()
+        path, _ = QFileDialog.getSaveFileName(self, '장 골라 CSV 내보내기',
+                                             f"latest_gradebook_{'_'.join(chapters)}.csv", '최신 점수표 CSV (*.csv)')
+        if not path:
+            return
+        try:
+            count = export_latest_csv(path, chapter_scopes(class_name, chapters, recorded),
+                [self.listStudents.item(i).text() for i in range(self.listStudents.count())], self.studentNames())
+        except (OSError, ValueError, PeeweeException) as exc:
+            QMessageBox.warning(self, 'Export', str(exc))
+            return
+        self.displayLog(f"장별 최신 점수표 CSV 저장 · {', '.join(chapters)} · {count}행 · " + html.escape(path))
+
     def openProblemGrading(self):
         from grading_window import GradingWindow
         from paths import ORIGIN, safe_path

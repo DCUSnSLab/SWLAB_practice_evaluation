@@ -151,12 +151,17 @@ def build_main_view(w):
     w.comboRuns.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     w.comboRuns.activated.connect(lambda index: w.loadSavedRun())
     actions.addWidget(w.comboRuns)
+    w.btnExportChapters = QPushButton('장 골라 CSV 내보내기'); w.btnExportChapters.clicked.connect(w.exportChapters)
+    w.btnExportChapters.setToolTip('기록이 있는 장 가운데 원하는 장만 골라 학생별 최신 점수표를 CSV 하나로 저장합니다.')
     for button in (w.btnOpenReport, w.btnReadReport, w.btnDetails, w.btnReloadReviews): actions.addWidget(button)
     w.btnMidtermScore = QPushButton('문제 점수 조정'); w.btnMidtermScore.clicked.connect(w.adjustMidtermScore)
     actions.addWidget(w.btnMidtermScore); w.btnMidtermScore.hide()
     actions.addStretch(); grade.addLayout(actions)
     w.report_location = QLineEdit('학생별 결과는 채점이 끝날 때마다 자동 저장됩니다.')
-    w.report_location.setReadOnly(True); grade.addWidget(w.report_location)
+    w.report_location.setReadOnly(True)
+    # The action row is already full at large fonts; the stretching path field gives way instead.
+    location = QHBoxLayout(); location.addWidget(w.report_location, 1); location.addWidget(w.btnExportChapters)
+    grade.addLayout(location)
     w.right_tabs.addTab(w.tab_grade, '채점 결과')
 
     code_tab = QWidget(); code = QHBoxLayout(code_tab)
@@ -200,6 +205,7 @@ def build_main_view(w):
 
     advanced = w.menuBar().addMenu('도구 / 고급')
     advanced.addAction('CSV / JSON 내보내기…').triggered.connect(w.exportResults)
+    advanced.addAction('장 골라 CSV 내보내기…').triggered.connect(w.exportChapters)
     w.actionImportReports = advanced.addAction('이전 채점·정성평가 기록을 DB로 가져오기'); w.actionImportReports.triggered.connect(w.importReports)
     w.actionManifestGrading = advanced.addAction('명세 파일로 배점 채점…'); w.actionManifestGrading.triggered.connect(w.openProblemGrading)
     for name, text, handler in [('btnMaterials', '실습 자료 보기', w.openMaterials), ('btnMaker', '기준 코드로 케이스 만들기', w.openMaker), ('btnReview', '수동 평가 기록', w.recordReview)]:

@@ -236,6 +236,18 @@ def list_runs(class_name=None, chapter=None, problem=None, limit=100):
     return runs
 
 
+def recorded_scopes(class_name):
+    """Chapters with saved grading or qualitative runs for a class, mapped to their problems."""
+    scopes = {}
+    with session():
+        for model in (GradingRun, QualitativeRun):
+            query = model.select(model.chapter, model.problem).where(model.class_name == class_name).distinct()
+            for run in query:
+                if run.chapter:
+                    scopes.setdefault(run.chapter, set()).add(run.problem)
+    return scopes
+
+
 def delete_run(run_id):
     with session():
         return GradingRun.delete().where(GradingRun.id == run_id).execute()

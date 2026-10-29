@@ -5,6 +5,7 @@ import io
 import db
 from core.record import atomic_text
 from latest_gradebook import LatestGradebook
+from midterm import is_midterm
 from paths import natural_key
 from qualitative_rubric import AXES, RESOURCE_IDS
 from result_reviews import has_total, problem_maxima, table_cells, status_label, total_score
@@ -106,9 +107,26 @@ def cell(value):
     return value
 
 
+def chapter_scopes(class_name, chapters, recorded):
+    """The midterm exports as its whole-exam view; another chapter exports each recorded problem."""
+    scopes = []
+    for chapter in chapters:
+        if is_midterm(class_name, chapter):
+            scopes.append(dict(class_name=class_name, chapter=chapter, problem='__all__'))
+            continue
+        problems = sorted(recorded.get(chapter, ()), key=lambda p: natural_key(p or ''))
+        scopes += [dict(class_name=class_name, chapter=chapter, problem=p) for p in problems or [None]]
+    return scopes
+
+
 def export_latest_csv(path, scope, students=(), names=None):
-    book, reviews = load_latest(scope, students, names)
-    columns, rows = csv_rows(book, reviews)
+    """Write one scope, or several stacked in one file; each row keeps its chapter and problem."""
+    columns, rows = [], []
+    for each in [scope] if isinstance(scope, dict) else scope:
+        book, reviews = load_latest(each, students, names)
+        own_columns, own_rows = csv_rows(book, reviews)
+        columns += [column for column in own_columns if column not in columns]
+        rows += own_rows
     stream = io.StringIO(newline='')
     writer = csv.writer(stream)
     writer.writerow([cell(column) for column in columns])

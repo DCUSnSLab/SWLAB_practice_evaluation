@@ -299,6 +299,40 @@ class LatestGradebookTests(unittest.TestCase):
         self.assertEqual(rows[0]['final_score'], '0.0')
         self.assertEqual(rows[0]['max_score'], '10')
 
+    def test_chapter_export_stacks_only_the_picked_chapters_in_one_csv(self):
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QDialog
+        self.save('whole', 20)
+        for chapter, problem in [('chap1', 'p1'), ('chap1', 'p2'), ('chap2', 'p1')]:
+            scope = dict(class_name='system_3_2026', chapter=chapter, problem=problem)
+            db.save_run(f'{chapter}_{problem}', dict(scope, students=['101'], case_count=1),
+                        [dict(student='101', case='1', passed=True, status='passed')], 'completed')
+        window = self.window()
+        shown = {}
+        def pick(picker):
+            items = [picker.chapters.item(i) for i in range(picker.chapters.count())]
+            shown.update({item.data(Qt.ItemDataRole.UserRole): item.checkState() for item in items})
+            picker.check_all(Qt.CheckState.Unchecked)
+            self.assertFalse(picker.ok_button.isEnabled())
+            for item in items:
+                if item.data(Qt.ItemDataRole.UserRole) in ('midterm', 'chap1'):
+                    item.setCheckState(Qt.CheckState.Checked)
+            return QDialog.DialogCode.Accepted
+        path = self.root / 'chapters.csv'
+        with patch('chapter_picker.ChapterPicker.exec', pick),                 patch('gui.QFileDialog.getSaveFileName', return_value=(str(path), '')) as save:
+            window.exportChapters()
+        # Only chapters with saved records are offered, and the one on screen starts checked.
+        self.assertEqual(shown, {'chap1': Qt.CheckState.Unchecked, 'chap2': Qt.CheckState.Unchecked,
+                                 'midterm': Qt.CheckState.Checked})
+        self.assertEqual(save.call_args.args[2], 'latest_gradebook_chap1_midterm.csv')
+        with path.open(encoding='utf-8-sig', newline='') as stream:
+            reader = csv.DictReader(stream); rows = list(reader)
+        self.assertEqual([(r['chapter'], r['problem']) for r in rows][::3],
+                         [('chap1', 'p1'), ('chap1', 'p2'), ('midterm', '__all__')])
+        self.assertEqual(len(rows), 9)
+        self.assertIn('copy.c_final', reader.fieldnames)
+        self.assertEqual([r['passed_cases'] for r in rows if r['chapter'] == 'chap1' and r['student'] == '101'], ['1', '1'])
+
     def test_regular_problem_csv_is_also_one_row_per_student_without_invented_points(self):
         from gradebook_csv import export_latest_csv
         scope = dict(class_name='system_3_2026', chapter='chap1', problem='p1')
