@@ -7,7 +7,7 @@ from core.record import atomic_text
 from latest_gradebook import LatestGradebook
 from paths import natural_key
 from qualitative_rubric import AXES, RESOURCE_IDS
-from result_reviews import table_cells, status_label
+from result_reviews import has_total, problem_maxima, table_cells, status_label, total_score
 from midterm_scoring import PROBLEM_LABELS
 
 
@@ -39,6 +39,10 @@ def csv_rows(book, reviews):
                       for p in review_problems}
     for label in summary_labels.values():
         columns += [f'{label} 정성 점수', f'{label} 정성 사유', f'{label} 정성 상태']
+    with_total = has_total(review_problems, book.context.get('problem') == '__all__')
+    maxima = problem_maxima(reviews)
+    if with_total:  # same sum as the main table: confirmed first, otherwise the AI proposal
+        columns += ['정성 총점', '정성 총점 만점']
     review_fields = ['status', 'overall', 'suggested_score', 'max_score', 'final_score', 'resource_score',
                      'summary', 'reviewer_note', 'message', 'run_id', 'saved_at', 'submission_issue']
     criterion_ids = list(dict.fromkeys([*AXES, *RESOURCE_IDS.values(),
@@ -74,6 +78,8 @@ def csv_rows(book, reviews):
             row[f'{label} 정성 점수'] = values[0][1]
             row[f'{label} 정성 사유'] = values[1][1]
             row[f'{label} 정성 상태'] = status_label(own[0]) if own else '미평가'
+        if with_total:
+            row['정성 총점'], row['정성 총점 만점'] = total_score(by_student.get(student, []), review_problems, maxima)
         for review in by_student.get(student, []):
             base = prefix(review.get('problem')) + '_qualitative_'
             row.update({base + key: review.get(key) for key in review_fields})

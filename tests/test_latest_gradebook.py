@@ -241,6 +241,7 @@ class LatestGradebookTests(unittest.TestCase):
         self.assertEqual(first['2-(2) 정성 점수'], '9')
         self.assertEqual(first['2-(2) 정성 사유'], 'AI 제안')
         self.assertEqual(first['전체 정성 점수'], '61')
+        self.assertEqual((first['정성 총점'], first['정성 총점 만점']), ('17', '20'))  # 1번 확정 8 + 2-(2) 제안 9; 전체 평가는 제외
         self.assertEqual(first['bookquery.c_qualitative_status'], 'ai_proposed')
         self.assertEqual(first['bookquery.c_qualitative_final_score'], '')
         self.assertEqual(first['exam_qualitative_final_score'], '61')

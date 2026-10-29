@@ -24,7 +24,42 @@ def table_columns(reviews, all_problems=False):
     problems += sorted(present - set(problems), key=lambda p: str(p or ''))
     headers = [('정성 ' + ('전체' if p == '__all__' else PROBLEM_LABELS.get(p, str(p or '문제'))))
                if all_problems else '정성 점수' for p in problems]
+    if has_total(problems, all_problems):
+        headers.append('정성 총점')
     return problems, headers + ['정성 사유'] if problems else []
+
+
+def has_total(problems, all_problems):
+    """The whole-exam view sums its per-problem columns; a whole-exam review is not one of them."""
+    return all_problems and any(p != '__all__' for p in problems)
+
+
+def problem_maxima(reviews):
+    """Full marks of each problem, read from its scored reviews (a failed attempt carries no marks)."""
+    maxima = {}
+    for review in reviews:
+        value = review.get('max_score') if review_score(review) is not None else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            maxima[review.get('problem')] = max(value, maxima.get(review.get('problem'), 0))
+    return maxima
+
+
+def review_score(review):
+    """Instructor decision first; an unconfirmed review shows its AI proposal."""
+    if review['status'] in ('confirmed', 'submission_zero'):
+        return review.get('final_score')
+    if review['status'] == 'ai_proposed':
+        return review.get('suggested_score')
+    return None
+
+
+def total_score(reviews, problems, maxima=None):
+    """(sum of the student's per-problem scores or None, sum of those problems' full marks)."""
+    parts = [p for p in problems if p != '__all__']
+    by_problem = {r.get('problem'): r for r in reviews}
+    scores = [s for s in (review_score(by_problem[p]) for p in parts if p in by_problem) if s is not None]
+    maximum = sum((maxima or {}).get(p, 0) for p in parts)
+    return (round(sum(scores), 2) if scores else None), round(maximum, 2)
 
 
 def short_reason(review):
@@ -44,7 +79,7 @@ def short_reason(review):
     return ''
 
 
-def table_cells(reviews, problems, all_problems=False):
+def table_cells(reviews, problems, all_problems=False, maxima=None):
     from midterm_scoring import PROBLEM_LABELS
     by_problem = {r.get('problem'): r for r in reviews}
     values = []
@@ -53,15 +88,15 @@ def table_cells(reviews, problems, all_problems=False):
         review = by_problem.get(problem)
         score = None
         if review:
-            if review['status'] in ('confirmed', 'submission_zero'):
-                score = review.get('final_score')
-            elif review['status'] == 'ai_proposed':
-                score = review.get('suggested_score')
+            score = review_score(review)
             reason = short_reason(review)
             if reason:
                 label = '전체' if problem == '__all__' else PROBLEM_LABELS.get(problem, str(problem or '문제'))
                 reasons.append(f'{label}: {reason}' if all_problems else reason)
         values.append(('—' if score is None else f'{score:g}', score))
+    if has_total(problems, all_problems):
+        total, maximum = total_score(reviews, problems, maxima)
+        values.append(('—' if total is None else f'{total:g} / {maximum:g}' if maximum else f'{total:g}', total))
     if reasons and any(r['status'] == 'ai_proposed' for r in reviews):
         reasons.insert(0, 'AI 제안 포함')
     reason = one_line(' · '.join(reasons))

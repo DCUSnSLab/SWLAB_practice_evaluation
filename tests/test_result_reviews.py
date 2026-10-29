@@ -129,20 +129,21 @@ class ResultReviewsTests(unittest.TestCase):
         window = self.window('midterm', ())
         table = window.resultTable
         self.assertEqual(window.selectedProblem(), '__all__')
-        self.assertEqual([table.horizontalHeaderItem(c).text() for c in (2, 3, 4)],
-                         ['정성 1번', '정성 2-(2)', '정성 사유'])
+        self.assertEqual([table.horizontalHeaderItem(c).text() for c in (2, 3, 4, 5)],
+                         ['정성 1번', '정성 2-(2)', '정성 총점', '정성 사유'])
         self.assertEqual(table.item(self.by_id(window, '101'), 2).text(), '7')
         self.assertEqual(table.item(self.by_id(window, '101'), 3).text(), '9')
+        self.assertEqual(table.item(self.by_id(window, '101'), 4).text(), '16 / 20')
         context = dict(class_name='system_3_2026', chapter='midterm', problem='__all__', students=['101'],
                        midterm_scoring=settings(), midterm_suite=load_suite('__all__'))
         window.case_report = SimpleNamespace(context=context, state='completed', score_overrides={}, directory=self.root / 'run')
         window.results = [dict(student='101', target_file=c['target_file'], case=f'{c["target_file"]} / {c["name"]}', passed=True, status='passed')
                           for c in context['midterm_suite']['cases']]
         window.refreshResultsTable()
-        self.assertEqual(table.columnCount(), 16)
+        self.assertEqual(table.columnCount(), 17)
         self.assertEqual(table.item(0, 3).text(), '75 / 75')
-        self.assertEqual(table.item(0, 13).text(), '7')
-        self.assertEqual(table.item(0, 14).text(), '9')
+        self.assertEqual([table.item(0, c).text() for c in (13, 14, 15)], ['7', '9', '16 / 20'])
+        self.assertEqual(table.horizontalHeaderItem(15).text(), '정성 총점')
         window.comboProblem.setCurrentIndex(window.comboProblem.findData('copy.c'))
         self.assertEqual(table.item(self.by_id(window, '101'), 2).text(), '7')
         self.assertNotIn('bookquery.c', table.item(self.by_id(window, '101'), 2).toolTip())
@@ -187,16 +188,17 @@ class ResultReviewsTests(unittest.TestCase):
             status='error', final_score=None, message=message)])
         window = self.window('midterm', ())
         table = window.resultTable
-        self.assertEqual([table.horizontalHeaderItem(c).text() for c in range(2, 6)],
-                         ['정성 1번', '정성 2-(2)', '정성 전체', '정성 사유'])
+        self.assertEqual([table.horizontalHeaderItem(c).text() for c in range(2, 7)],
+                         ['정성 1번', '정성 2-(2)', '정성 전체', '정성 총점', '정성 사유'])
         first = self.by_id(window, '101')
-        self.assertEqual([table.item(first, c).text() for c in range(2, 6)], ['0', '7', '60', '1번: 파일 없음'])
+        # The total adds per-problem scores only; the separate whole-exam review is not added again.
+        self.assertEqual([table.item(first, c).text() for c in range(2, 7)], ['0', '7', '60', '7 / 20', '1번: 파일 없음'])
         second = self.by_id(window, '102')
-        self.assertEqual(table.item(second, 2).text(), '—')
-        self.assertEqual(table.item(second, 5).text(), '1번: 평가 실패 · 응답 형식 오류')
-        self.assertNotIn('\n', table.item(second, 5).text())
+        self.assertEqual([table.item(second, c).text() for c in (2, 5)], ['—', '—'])
+        self.assertEqual(table.item(second, 6).text(), '1번: 평가 실패 · 응답 형식 오류')
+        self.assertNotIn('\n', table.item(second, 6).text())
         self.assertFalse(table.wordWrap())
-        self.assertIn(message, table.item(second, 5).toolTip())
+        self.assertIn(message, table.item(second, 6).toolTip())
         table.selectRow(second)
         self.assertIn(message, window.resultDetail.toPlainText())
         table.selectRow(first)
@@ -233,7 +235,8 @@ class ResultReviewsTests(unittest.TestCase):
         table = window.resultTable
         self.assertEqual(table.item(index, 12).text(), '폴더 없음')
         self.assertEqual(table.item(index, 13).text(), '0')
-        self.assertEqual(table.item(index, 14).text(), '1번: 빈 파일')
+        self.assertEqual(table.item(index, 14).text(), '0 / 10')
+        self.assertEqual(table.item(index, 15).text(), '1번: 빈 파일')
         self.assertIn('지정 파일 없음', table.item(index, 12).toolTip())
         self.assertEqual(table.item(index, 3).text(), '0 / 75')
 

@@ -770,9 +770,10 @@ class Gui(QMainWindow):
             self.result_reviews_error = None
         except Exception as exc:
             self.result_reviews_error = str(exc)
-        from result_reviews import table_columns
-        self.review_problems, self.review_headers = table_columns(
-            [row for reviews in self.result_reviews.values() for row in reviews], self.result_reviews_all)
+        from result_reviews import table_columns, problem_maxima
+        saved = [row for reviews in self.result_reviews.values() for row in reviews]
+        self.review_problems, self.review_headers = table_columns(saved, self.result_reviews_all)
+        self.review_maxima = problem_maxima(saved)
 
     def setResultReviewCells(self, index, student, start):
         if not self.result_reviews:
@@ -780,11 +781,13 @@ class Gui(QMainWindow):
         from result_reviews import table_cells, details
         reviews = self.result_reviews.get(student, [])
         tooltip = '\n\n'.join(details(row) for row in reviews) or '이 문제에 저장된 정성평가가 없습니다.'
-        for offset, (text, sort) in enumerate(table_cells(reviews, self.review_problems, self.result_reviews_all)):
+        cells = table_cells(reviews, self.review_problems, self.result_reviews_all, self.review_maxima)
+        for offset, (text, sort) in enumerate(cells):
             column = start + offset
             item = SortableItem(text, sort)
-            is_score = offset < len(self.review_problems)
-            matching = [r for r in reviews if r.get('problem') == self.review_problems[offset]] if is_score else reviews
+            is_problem = offset < len(self.review_problems)
+            is_score = offset < len(cells) - 1  # per-problem scores and the total; the last column is the reason
+            matching = [r for r in reviews if r.get('problem') == self.review_problems[offset]] if is_problem else reviews
             item.setToolTip('\n\n'.join(details(r) for r in matching) if matching else tooltip)
             if is_score:
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
