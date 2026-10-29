@@ -125,6 +125,39 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_saved_reviews('qualitative_20261027_174410_169c90')
 
+    def test_rescore_moves_legacy_rows_to_ceiling_and_follows_unchanged_confirmations(self):
+        from qualitative import DEFAULT_RUBRIC, archive_reviews, load_reviews, load_saved_reviews, validate_review
+        from qualitative_rubric import LEGACY_SCORING_VERSION, SCORING_VERSION, compute_scores, resource_scope
+        def legacy_row(student, status, final=None):
+            raw = {'summary': '요약', 'strengths': [], 'improvements': [], 'uncertainties': [], 'criteria': [
+                dict(id=r['id'], score={'correctness': 8, 'problem_understanding': 7, 'resource_files': 7}.get(r['id'], 5),
+                     assessment='확인', suggestion='보완', evidence=[]) for r in DEFAULT_RUBRIC]}
+            row = validate_review(raw, DEFAULT_RUBRIC, {'main.c': 'line'}, total_score=10,
+                                  resource_scope=resource_scope('파일을 읽는다.', {}))
+            row.update(compute_scores(row['criteria'], 10, LEGACY_SCORING_VERSION))
+            row.update(class_name='system_1_2026', chapter='midterm', problem='copy.c', student=student,
+                       status=status, final_score=final, reviewer_note='확인' if final is not None else '')
+            return row
+        rows = [legacy_row('101', 'confirmed', 7), legacy_row('102', 'confirmed', 9), legacy_row('103', 'ai_proposed')]
+        self.assertEqual(rows[0]['suggested_score'], 7)
+        path = self.root / 'reports' / 'qualitative_20261028_201942_ca041d.json'
+        archive_reviews(path, rows, {'rubric': DEFAULT_RUBRIC, 'scoring_version': LEGACY_SCORING_VERSION,
+                                     'submissions': [dict(class_name='system_1_2026', chapter='midterm', problem='copy.c')]})
+        planned = db.rescore_qualitative(dry_run=True)
+        self.assertEqual([(c['student'], c['suggested_score'], c['final_score']) for c in planned],
+                         [('101', 8, 8), ('102', 8, 9), ('103', 8, None)])
+        self.assertEqual(db.load_qualitative(path.stem)['results'][0]['suggested_score'], 7)
+        self.assertEqual(db.rescore_qualitative(), planned)
+        for document in (load_saved_reviews(path.stem), load_reviews(path)):
+            results = document['results']
+            self.assertEqual([(r['suggested_score'], r['final_score'], r['scoring_version']) for r in results],
+                             [(8, 8, SCORING_VERSION), (8, 9, SCORING_VERSION), (8, None, SCORING_VERSION)])
+            self.assertEqual((results[0]['score_migration']['previous_suggested_score'],
+                              results[0]['score_migration']['previous_final_score']), (7, 7))
+            self.assertEqual(document['context']['scoring_version'], SCORING_VERSION)
+        self.assertEqual(db.latest_qualitative_reviews('system_1_2026', 'midterm', ['copy.c'])[0]['final_score'], 8)
+        self.assertEqual(db.rescore_qualitative(), [])
+
     def test_import_qualitative_loads_each_archive_once(self):
         folder = self.root / 'reports'; folder.mkdir()
         rows = self.review_rows()

@@ -399,6 +399,53 @@ def latest_qualitative_reviews(class_name, chapter, problems):
     return [value[1] for value in latest.values()]
 
 
+def rescore_qualitative(dry_run=False):
+    """Recompute rows scored with the legacy round-half-even rule under the current ceiling rule.
+
+    A confirmed score equal to its old proposal follows the new proposal; a score the
+    instructor set to a different value is kept. Each changed row records its previous
+    values in `score_migration`, and the batch's JSON export is rewritten when it exists.
+    Running it again changes nothing. Returns one dict per row whose scores changed.
+    """
+    from qualitative import save_reviews
+    from qualitative_rubric import LEGACY_SCORING_VERSION, SCORING_VERSION, compute_scores
+    with session():  # oldest first keeps the batches' relative updated_at order
+        run_ids = [run.id for run in QualitativeRun.select(QualitativeRun.id)
+                   .order_by(QualitativeRun.created_at, QualitativeRun.id)]
+    stamp = now()
+    changes = []
+    for run_id in run_ids:
+        document = load_qualitative(run_id)
+        rows, context = document['results'], document['context']
+        touched = False
+        for row in rows:
+            if row.get('scoring_version') != LEGACY_SCORING_VERSION or not isinstance(row.get('criteria'), list):
+                continue
+            scores = compute_scores(row['criteria'], row['max_score'])
+            before = {key: row.get(key) for key in ('overall', 'resource_score', 'suggested_score', 'final_score')}
+            final = row.get('final_score')
+            if row.get('status') == 'confirmed' and final == row.get('suggested_score'):
+                final = scores['suggested_score']
+            row.update(scores, final_score=final)
+            touched = True
+            if any(row.get(key) != value for key, value in before.items()):
+                row['score_migration'] = dict(from_version=LEGACY_SCORING_VERSION, to_version=SCORING_VERSION,
+                                              at=stamp, **{f'previous_{key}': value for key, value in before.items()})
+                changes.append(dict(run_id=run_id, student=row.get('student'), problem=row.get('problem'),
+                                    status=row.get('status'), previous_suggested_score=before['suggested_score'],
+                                    suggested_score=row['suggested_score'], previous_final_score=before['final_score'],
+                                    final_score=row['final_score']))
+        if not touched or dry_run:
+            continue
+        if context.get('scoring_version') == LEGACY_SCORING_VERSION:
+            context['scoring_version'] = SCORING_VERSION
+        save_qualitative(run_id, context, rows, document['version'], document['archive'], document['created_at'])
+        archive = Path(document['archive']) if document['archive'] else None
+        if archive and archive.is_file():
+            save_reviews(archive, rows, context)
+    return changes
+
+
 def import_qualitative(root=None):
     """Load qualitative_*.json archives not yet in the database; returns the imported run IDs."""
     import paths
@@ -433,6 +480,8 @@ def main(argv=None):
     load.add_argument('--root', type=Path, help='reports 폴더 경로 (기본: reports)')
     commands.add_parser('runs', help='저장된 채점 실행 목록')
     commands.add_parser('reviews', help='저장된 정성평가 실행 목록')
+    rescore = commands.add_parser('rescore', help='반올림 기준(v1) 정성평가 점수를 올림 기준으로 다시 계산')
+    rescore.add_argument('--dry-run', action='store_true', help='저장하지 않고 바뀔 점수만 출력')
     options = parser.parse_args(argv)
     if options.command == 'import':
         root = options.root
@@ -444,6 +493,14 @@ def main(argv=None):
         for run in list_runs():
             print(f"{run['id']}  {run['class_name']}  {run['chapter']}/{run['problem']}  {run['state']}  "
                   f"학생 {run['student_count']}명 · 결과 {run['result_count']}건")
+    elif options.command == 'rescore':
+        changes = rescore_qualitative(options.dry_run)
+        for change in changes:
+            print(f"{change['run_id']}  {change['problem']}  {change['student']}  {change['status']}  "
+                  f"제안 {change['previous_suggested_score']}→{change['suggested_score']}  "
+                  f"확정 {change['previous_final_score']}→{change['final_score']}")
+        verb = '바뀔' if options.dry_run else '바꾼'
+        print(f"{verb} 점수 {len(changes)}건 -> {default_path()}")
     elif options.command == 'reviews':
         for run in list_qualitative():
             print(f"{run['id']}  {run['class_name']}  {run['chapter']}/{run['problem']}  {run['state']}  "
