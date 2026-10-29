@@ -47,6 +47,18 @@ class GuiTests(unittest.TestCase):
         self.app.processEvents()
         self.assertFalse(window.worker_thread.isRunning())
 
+    def test_uncaught_slot_error_shows_a_dialog_instead_of_aborting(self):
+        from PyQt6.QtWidgets import QPushButton
+        import main
+        def stale_import():
+            raise ImportError("cannot import name 'has_total' from 'result_reviews'")
+        button = QPushButton()
+        button.clicked.connect(stale_import)
+        with patch.object(sys, 'excepthook', main.report_error),                 patch('main.QMessageBox.critical') as critical, patch('traceback.print_exception'):
+            button.click()
+        self.assertIn('has_total', critical.call_args.args[2])
+        self.assertIn('다시 실행', critical.call_args.args[2])
+
     def test_job_completes_without_blocking_gui(self):
         window = Gui()
         received = []
