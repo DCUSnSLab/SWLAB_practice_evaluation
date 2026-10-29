@@ -453,8 +453,7 @@ class QualitativeWindow(QWidget):
     def refresh_rows(self):
         selected={self.visual_key(i.row()) for i in self.table.selectionModel().selectedRows()}
         current=self.visual_key(self.table.currentRow());old_count=self.table.rowCount()
-        from result_reviews import LABELS
-        labels=LABELS
+        from result_reviews import status_label
         self.refreshing_table=True
         with QSignalBlocker(self.table):
             self.table.setSortingEnabled(False)
@@ -462,7 +461,7 @@ class QualitativeWindow(QWidget):
             self.table.setRowCount(len(self.rows))
             for i,row in enumerate(self.rows):
                 name=str(row.get('student_name') or '')
-                values=[str(row.get('student','')),name,labels.get(row['status'],row['status']),
+                values=[str(row.get('student','')),name,status_label(row),
                     '' if row.get('overall') is None else f"{row['overall']}/100",
                     '' if row.get('suggested_score') is None else f"{row['suggested_score']}/{row['max_score']}",row.get('final_score')]
                 sort_values=[student_sort_value(row.get('student','')),name,values[2],row.get('overall'),row.get('suggested_score'),row.get('final_score')]

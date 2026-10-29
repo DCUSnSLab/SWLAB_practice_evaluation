@@ -48,6 +48,17 @@ class SubmissionZeroTests(unittest.TestCase):
         submissions = [self.submission(str(i), kind) for i, kind in enumerate(
             ('missing_folder', 'missing_file', 'empty', 'whitespace'))]
         rows = self.run_reviews(submissions)
+        from result_reviews import status_label
+        self.assertEqual([status_label(r) for r in rows],
+                         ['제출폴더없음', '대상파일없음', '빈파일', '빈파일'])
+        from gradebook_csv import csv_rows
+        from latest_gradebook import LatestGradebook
+        scope = {key: submissions[0][key] for key in ('class_name', 'chapter', 'problem')}
+        book = LatestGradebook(scope, [r['student'] for r in rows])
+        _, exported = csv_rows(book, rows)
+        self.assertEqual([r['1번 정성 점수'] for r in exported], [0, 0, 0, 0])
+        self.assertEqual([r['1번 정성 사유'] for r in exported], ['폴더 없음', '파일 없음', '빈 파일', '빈 파일'])
+        self.assertEqual([r['1번 정성 상태'] for r in exported], [status_label(r) for r in rows])
         self.client._request.assert_not_called()
         self.assertEqual([r['submission_issue'] for r in rows], ['missing_folder','missing_file','empty_file','empty_file'])
         for row in rows:
@@ -191,7 +202,7 @@ class SubmissionZeroGuiTests(unittest.TestCase):
                 self.app.processEvents()
                 request.assert_not_called()
             self.assertEqual(window.rows[0]['status'], 'submission_zero')
-            self.assertEqual(window.table.item(0, 2).text(), '제출 상태 0점')
+            self.assertEqual(window.table.item(0, 2).text(), '빈파일')
             self.assertEqual(window.table.item(0, 5).text(), '0')
             self.assertIn('비어', window.detail.toPlainText())
             self.assertEqual(cells(window.rows)[3][0], '0 / 10')

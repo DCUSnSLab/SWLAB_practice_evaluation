@@ -7,6 +7,8 @@ from core.record import atomic_text
 from latest_gradebook import LatestGradebook
 from paths import natural_key
 from qualitative_rubric import AXES, RESOURCE_IDS
+from result_reviews import table_cells, status_label
+from midterm_scoring import PROBLEM_LABELS
 
 
 def load_latest(scope, students=(), names=None):
@@ -32,6 +34,11 @@ def csv_rows(book, reviews):
     for target in book.targets:
         columns += [f'{prefix(target)}_{key}' for key in ('auto', 'final', 'max', 'adjusted')]
     review_problems = list(dict.fromkeys([*book.targets, *(r.get('problem') for r in reviews)]))
+    # Human-readable summary columns use exactly the main table's score/reason rules.
+    summary_labels = {p: ('전체' if p == '__all__' else PROBLEM_LABELS.get(p, str(p or '문제')))
+                      for p in review_problems}
+    for label in summary_labels.values():
+        columns += [f'{label} 정성 점수', f'{label} 정성 사유', f'{label} 정성 상태']
     review_fields = ['status', 'overall', 'suggested_score', 'max_score', 'final_score', 'resource_score',
                      'summary', 'reviewer_note', 'message', 'run_id', 'saved_at', 'submission_issue']
     criterion_ids = list(dict.fromkeys([*AXES, *RESOURCE_IDS.values(),
@@ -61,6 +68,12 @@ def csv_rows(book, reviews):
                 row.update({base + '_adjustment_' + key: latest.get(key) for key in ('reason', 'reviewer', 'at')})
         for problem in review_problems:
             row[prefix(problem) + '_qualitative_status'] = 'not_reviewed'
+            own = [r for r in by_student.get(student, []) if r.get('problem') == problem]
+            values = table_cells(own, [problem])
+            label = summary_labels[problem]
+            row[f'{label} 정성 점수'] = values[0][1]
+            row[f'{label} 정성 사유'] = values[1][1]
+            row[f'{label} 정성 상태'] = status_label(own[0]) if own else '미평가'
         for review in by_student.get(student, []):
             base = prefix(review.get('problem')) + '_qualitative_'
             row.update({base + key: review.get(key) for key in review_fields})

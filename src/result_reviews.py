@@ -4,6 +4,14 @@ LABELS = {'ai_proposed': 'AI 제안', 'confirmed': '교수자 확정', 'error': 
 HEADERS = ['정성 상태', '정성 품질 /100', '정성 제안 점수', '정성 확정 점수']
 
 
+def status_label(review):
+    if review.get('status') == 'submission_zero':
+        return {'missing_folder': '제출폴더없음', 'missing_file': '대상파일없음',
+                'no_sources': '대상파일없음', 'empty_file': '빈파일'}.get(
+                    review.get('submission_issue'), LABELS['submission_zero'])
+    return LABELS.get(review['status'], review['status'])
+
+
 def one_line(text, limit=100):
     text = ' '.join(str(text or '').split())
     return text if len(text) <= limit else text[:limit - 1] + '…'
@@ -97,7 +105,7 @@ def cells(reviews, all_problems=False):
         final = review.get('final_score') if review.get('status') in ('confirmed', 'submission_zero') else None
         quality = review.get('overall')
         maximum = review.get('max_score')
-        values = [LABELS.get(review['status'], review['status']),
+        values = [status_label(review),
                   '—' if quality is None else f'{quality:g}',
                   '—' if proposed is None else f'{proposed:g} / {maximum:g}',
                   '—' if final is None else f'{final:g} / {maximum:g}']
@@ -109,7 +117,7 @@ def cells(reviews, all_problems=False):
 
 
 def details(review):
-    parts = [f"정성평가 · {review.get('problem') or '문제 없음'} · {LABELS.get(review['status'], review['status'])}",
+    parts = [f"정성평가 · {review.get('problem') or '문제 없음'} · {status_label(review)}",
              f"DB 기록: {review['run_id']} · 평가/확정 시각: {review.get('saved_at') or '기록 없음'}"]
     values = cells([review])
     parts.append(' · '.join(f'{name}: {value[0]}' for name, value in zip(HEADERS[1:], values[1:])))
