@@ -11,6 +11,7 @@ from midterm_qualitative import load_problems, problem_statement, scaled_rubric,
 from qualitative import DEFAULT_RUBRIC, collect_sources
 
 
+@support.needs_midterm_suite
 class MidtermQualitativeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -14,6 +14,7 @@ from reports import CaseReport
 from core.record import atomic_text
 
 
+@support.needs_midterm_suite
 class MidtermScoringTests(unittest.TestCase):
     def setUp(self):
         self.bundle = load_suite()
