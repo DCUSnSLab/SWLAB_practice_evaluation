@@ -69,10 +69,13 @@ class ResultReviewsTests(unittest.TestCase):
         window = self.window()
         table = window.resultTable
         index = self.by_id(window, '101')
-        self.assertEqual(table.columnCount(), 10)
-        self.assertEqual([table.item(index, col).text() for col in (1, 2, 6, 7, 8, 9)],
-                         ['테스트 학생', '미실행', '교수자 확정', '70', '0 / 100', '0 / 100'])
-        self.assertEqual(table.item(self.by_id(window, '102'), 8).text(), '—')
+        self.assertEqual(table.columnCount(), 8)
+        self.assertEqual([table.item(index, col).text() for col in (1, 2, 6, 7)],
+                         ['테스트 학생', '미실행', '0', '확정'])
+        self.assertEqual(table.item(self.by_id(window, '102'), 6).text(), '—')
+        self.assertTrue(all(table.isColumnHidden(column) for column in range(2, 6)))
+        self.assertEqual(table.columnViewportPosition(6), table.columnWidth(0) + table.columnWidth(1))
+        self.assertIn('0 / 100', table.item(index, 6).toolTip())
         table.selectRow(index)
         self.assertIn('정성 평가 근거', window.resultDetail.toPlainText())
         self.assertIn('0점 확인', window.resultDetail.toPlainText())
@@ -107,11 +110,11 @@ class ResultReviewsTests(unittest.TestCase):
         window.refreshResultsTable()
         table = window.resultTable
         table.selectRow(self.by_id(window, '101'))
-        table.sortItems(8, Qt.SortOrder.DescendingOrder)
+        table.sortItems(6, Qt.SortOrder.DescendingOrder)
         self.assertEqual([window.resultStudent(i) for i in range(2)], ['102', '101'])
         window.btnReloadReviews.click()
         self.assertEqual(window.resultStudent(table.currentRow()), '101')
-        self.assertEqual(table.horizontalHeader().sortIndicatorSection(), 8)
+        self.assertEqual(table.horizontalHeader().sortIndicatorSection(), 6)
         self.assertEqual(table.item(self.by_id(window, '101'), 4).text(), '1 / 1')
         window.comboProblem.setCurrentIndex(window.comboProblem.findData('p2'))
         self.assertIsNone(window.case_report)
@@ -128,20 +131,23 @@ class ResultReviewsTests(unittest.TestCase):
         window = self.window('midterm', ())
         table = window.resultTable
         self.assertEqual(window.selectedProblem(), '__all__')
-        self.assertIn('copy.c: 7 / 10', table.item(self.by_id(window, '101'), 8).text())
-        self.assertIn('bookquery.c: 9 / 10', table.item(self.by_id(window, '101'), 8).text())
+        self.assertEqual([table.horizontalHeaderItem(c).text() for c in (6, 7, 8)],
+                         ['정성 1번', '정성 2-(2)', '정성 사유'])
+        self.assertEqual(table.item(self.by_id(window, '101'), 6).text(), '7')
+        self.assertEqual(table.item(self.by_id(window, '101'), 7).text(), '9')
         context = dict(class_name='system_3_2026', chapter='midterm', problem='__all__', students=['101'],
                        midterm_scoring=settings(), midterm_suite=load_suite('__all__'))
         window.case_report = SimpleNamespace(context=context, state='completed', score_overrides={}, directory=self.root / 'run')
         window.results = [dict(student='101', target_file=c['target_file'], case=f'{c["target_file"]} / {c["name"]}', passed=True, status='passed')
                           for c in context['midterm_suite']['cases']]
         window.refreshResultsTable()
-        self.assertEqual(table.columnCount(), 17)
+        self.assertEqual(table.columnCount(), 16)
         self.assertEqual(table.item(0, 3).text(), '75 / 75')
-        self.assertIn('copy.c: 7 / 10', table.item(0, 15).text())
+        self.assertEqual(table.item(0, 13).text(), '7')
+        self.assertEqual(table.item(0, 14).text(), '9')
         window.comboProblem.setCurrentIndex(window.comboProblem.findData('copy.c'))
-        self.assertEqual(table.item(self.by_id(window, '101'), 8).text(), '7 / 10')
-        self.assertNotIn('bookquery.c', table.item(self.by_id(window, '101'), 8).toolTip())
+        self.assertEqual(table.item(self.by_id(window, '101'), 6).text(), '7')
+        self.assertNotIn('bookquery.c', table.item(self.by_id(window, '101'), 6).toolTip())
 
     def test_qualitative_save_and_batch_confirmation_refresh_main_table_immediately(self):
         window = self.window()
@@ -159,16 +165,79 @@ class ResultReviewsTests(unittest.TestCase):
         qualitative.archive = self.root / 'reports' / 'qualitative_saved.json'
         qualitative.refresh_rows(); qualitative.persist()
         index = self.by_id(window, '101')
-        self.assertEqual(window.resultTable.item(index, 6).text(), 'AI 제안')
-        self.assertEqual(window.resultTable.item(index, 9).text(), '—')
+        self.assertEqual(window.resultTable.item(index, 6).text(), '50')
+        self.assertEqual(window.resultTable.item(index, 7).text(), 'AI 제안')
         qualitative.batch_note.setText('일괄 검토 확인')
         qualitative.confirm_selected()
         index = self.by_id(window, '101')
-        self.assertEqual(window.resultTable.item(index, 6).text(), '교수자 확정')
-        self.assertEqual(window.resultTable.item(index, 9).text(), '50 / 100')
+        self.assertEqual(window.resultTable.item(index, 6).text(), '50')
+        self.assertEqual(window.resultTable.item(index, 7).text(), '확정')
         qualitative.archive.unlink()
         reopened = self.window()
-        self.assertEqual(reopened.resultTable.item(self.by_id(reopened, '101'), 9).text(), '50 / 100')
+        self.assertEqual(reopened.resultTable.item(self.by_id(reopened, '101'), 6).text(), '50')
+
+    def test_numeric_problem_columns_and_single_line_reasons_keep_full_details(self):
+        self.save('copy_zero', [self.row(problem='copy.c', chapter='midterm', score=0, max_score=10,
+            status='submission_zero', final_score=0, overall=0, submission_issue='missing_file',
+            message='평가 대상 파일이 없습니다: copy.c', summary='선택 파일 미제출')])
+        self.save('query_approved', [self.row(problem='bookquery.c', chapter='midterm', score=9,
+            max_score=10, status='confirmed', final_score=7)])
+        self.save('exam_approved', [self.row(problem='__all__', chapter='midterm', score=55,
+            max_score=75, status='confirmed', final_score=60)])
+        message = 'Unterminated string starting at: line 8 column 5\n' + '자세한 응답 오류 ' * 30
+        self.save('response_error', [self.row('102', problem='copy.c', chapter='midterm', score=None,
+            status='error', final_score=None, message=message)])
+        window = self.window('midterm', ())
+        table = window.resultTable
+        self.assertEqual([table.horizontalHeaderItem(c).text() for c in range(6, 10)],
+                         ['정성 1번', '정성 2-(2)', '정성 전체', '정성 사유'])
+        first = self.by_id(window, '101')
+        self.assertEqual([table.item(first, c).text() for c in range(6, 10)], ['0', '7', '60', '1번: 파일 없음'])
+        second = self.by_id(window, '102')
+        self.assertEqual(table.item(second, 6).text(), '—')
+        self.assertEqual(table.item(second, 9).text(), '1번: 평가 실패 · 응답 형식 오류')
+        self.assertNotIn('\n', table.item(second, 9).text())
+        self.assertFalse(table.wordWrap())
+        self.assertIn(message, table.item(second, 9).toolTip())
+        table.selectRow(second)
+        self.assertIn(message, window.resultDetail.toPlainText())
+        table.selectRow(first)
+        self.assertIn('정성 제안 점수: 9 / 10', window.resultDetail.toPlainText())
+        self.assertIn('정성 확정 점수: 7 / 10', window.resultDetail.toPlainText())
+        self.assertEqual(db.load_qualitative('query_approved')['results'][0]['suggested_score'], 9)
+
+    def test_adding_a_problem_column_keeps_numeric_sort_and_current_student(self):
+        self.save('query', [self.row(problem='bookquery.c', chapter='midterm', score=2),
+                            self.row('102', problem='bookquery.c', chapter='midterm', score=9)])
+        window = self.window('midterm', ())
+        table = window.resultTable
+        table.selectRow(self.by_id(window, '101'))
+        table.sortItems(6, Qt.SortOrder.DescendingOrder)
+        self.save('copy', [self.row(problem='copy.c', chapter='midterm', score=9),
+                           self.row('102', problem='copy.c', chapter='midterm', score=1)])
+        window.refreshResultsTable()
+        self.assertEqual(table.horizontalHeaderItem(table.horizontalHeader().sortIndicatorSection()).text(), '정성 2-(2)')
+        self.assertEqual([window.resultStudent(i) for i in range(2)], ['102', '101'])
+        self.assertEqual(window.resultStudent(table.currentRow()), '101')
+
+    def test_missing_execution_and_qualitative_causes_are_short_in_the_main_table(self):
+        from midterm import grade_suite, load_suite
+        from midterm_scoring import settings
+        bundle = load_suite('__all__')
+        rows = [dict(r, student='101') for r in grade_suite(self.root / 'missing', bundle)]
+        context = dict(class_name='system_3_2026', chapter='midterm', problem='__all__',
+                       students=['101'], midterm_suite=bundle, midterm_scoring=settings())
+        db.save_run('missing', context, rows, 'completed')
+        self.save('zero', [self.row(problem='copy.c', chapter='midterm', score=0, max_score=10,
+            status='submission_zero', final_score=0, overall=0, submission_issue='empty_file')])
+        window = self.window('midterm', ())
+        index = self.by_id(window, '101')
+        table = window.resultTable
+        self.assertEqual(table.item(index, 12).text(), '폴더 없음')
+        self.assertEqual(table.item(index, 13).text(), '0')
+        self.assertEqual(table.item(index, 14).text(), '1번: 빈 파일')
+        self.assertIn('지정 파일 없음', table.item(index, 12).toolTip())
+        self.assertEqual(table.item(index, 3).text(), '0 / 75')
 
 
 if __name__ == '__main__':

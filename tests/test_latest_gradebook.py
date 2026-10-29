@@ -148,7 +148,7 @@ class LatestGradebookTests(unittest.TestCase):
         self.assertIsNone(window.comboRuns.currentData())
         self.assertEqual(table.item(0, 3).text(), '65 / 75')
         self.assertEqual(table.item(1, 3).text(), '75 / 75')
-        self.assertIn('8 / 10', table.item(0, 16).text())
+        self.assertEqual(table.item(0, 13).text(), '8')
         window.comboRuns.setCurrentIndex(window.comboRuns.findData('whole')); window.loadSavedRun()
         self.assertFalse(window.latest_view)
         self.assertEqual(table.item(0, 3).text(), '75 / 75')

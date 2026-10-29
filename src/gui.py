@@ -648,14 +648,7 @@ class Gui(QMainWindow):
         self.resultTable.blockSignals(True)
         self.resultTable.setSortingEnabled(False)
         self.resultTable.clearContents()
-        from result_reviews import HEADERS
-        self.resultTable.setColumnCount(6 + (len(HEADERS) if self.result_reviews else 0))
-        self.resultTable.setHorizontalHeaderLabels(['학번', '이름', '판정', '기호', '통과 / 전체', '실패 케이스'] +
-                                                   (HEADERS if self.result_reviews else []))
-        if (getattr(self,'_result_sort_schema',None)!='cases' or
-                self.resultTable.horizontalHeader().sortIndicatorSection() >= self.resultTable.columnCount()):
-            self.resultTable.horizontalHeader().setSortIndicator(0,Qt.SortOrder.AscendingOrder)
-        self._result_sort_schema='cases'
+        self.setResultHeaders(['학번', '이름', '판정', '기호', '통과 / 전체', '실패 케이스'] + self.review_headers, 'cases')
         self.resultTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.resultTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         if self.result_reviews:
@@ -707,6 +700,9 @@ class Gui(QMainWindow):
                                      '—': '아직 판정할 수 없습니다. 판정 열과 상세 근거를 확인하세요.'}[symbol])
                 self.resultTable.setItem(index, column, item)
             self.setResultReviewCells(index, summary['student'], 6)
+        if self.result_reviews and not self.display_rows and not self.case_report:
+            for column in range(2, 6):
+                self.resultTable.setColumnHidden(column, True)
         self.resultTable.setSortingEnabled(True)
         self.resultTable.blockSignals(False)
         self.restoreResultStudent(selected)
@@ -715,6 +711,20 @@ class Gui(QMainWindow):
     def selectedResultScope(self):
         return dict(class_name=self.comboClass.currentData(), chapter=self.comboChapter.currentText(),
                     problem=None if self.comboProblem.isHidden() else self.selectedProblem())
+
+    def setResultHeaders(self, headers, schema):
+        table = self.resultTable
+        section = table.horizontalHeader().sortIndicatorSection()
+        old_header = table.horizontalHeaderItem(section) if section >= 0 else None
+        old_name = old_header.text() if old_header else None
+        same_schema = getattr(self, '_result_sort_schema', None) == schema
+        order = table.horizontalHeader().sortIndicatorOrder() if same_schema else Qt.SortOrder.AscendingOrder
+        table.setColumnCount(len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        for column in range(len(headers)):
+            table.setColumnHidden(column, False)
+        table.horizontalHeader().setSortIndicator(headers.index(old_name) if same_schema and old_name in headers else 0, order)
+        self._result_sort_schema = schema
 
     def loadLatestGradebook(self):
         self.gradebook = None
@@ -759,19 +769,27 @@ class Gui(QMainWindow):
             self.result_reviews_error = None
         except Exception as exc:
             self.result_reviews_error = str(exc)
+        from result_reviews import table_columns
+        self.review_problems, self.review_headers = table_columns(
+            [row for reviews in self.result_reviews.values() for row in reviews], self.result_reviews_all)
 
     def setResultReviewCells(self, index, student, start):
         if not self.result_reviews:
             return
-        from result_reviews import cells, details
+        from result_reviews import table_cells, details
         reviews = self.result_reviews.get(student, [])
         tooltip = '\n\n'.join(details(row) for row in reviews) or '이 문제에 저장된 정성평가가 없습니다.'
-        for column, (text, sort) in enumerate(cells(reviews, self.result_reviews_all), start):
+        for offset, (text, sort) in enumerate(table_cells(reviews, self.review_problems, self.result_reviews_all)):
+            column = start + offset
             item = SortableItem(text, sort)
-            item.setToolTip(tooltip)
+            is_score = offset < len(self.review_problems)
+            matching = [r for r in reviews if r.get('problem') == self.review_problems[offset]] if is_score else reviews
+            item.setToolTip('\n\n'.join(details(r) for r in matching) if matching else tooltip)
+            if is_score:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.resultTable.setItem(index, column, item)
             self.resultTable.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
-            self.resultTable.setColumnWidth(column, 170)
+            self.resultTable.setColumnWidth(column, 100 if is_score else 280)
 
     def showResultReviewLegend(self):
         if self.gradebook_error:
@@ -780,13 +798,11 @@ class Gui(QMainWindow):
             self.resultLegend.setText(self.resultLegend.text() + '\n정성평가 DB 읽기 실패: ' + self.result_reviews_error)
         elif self.result_reviews:
             self.resultLegend.setText(self.resultLegend.text() +
-                '\n정성평가: DB의 학생·문제별 최근 평가(재시도 실패 시 이전 점수 유지) · 확정 전 점수는 AI 제안 · 실행 점수와 별도 표시' +
-                (' · 전체 보기에서는 파일별 점수를 각각 표시' if self.result_reviews_all else ''))
+                '\n정성 점수: 확정 점수 우선 · 미확정은 AI 제안 · 상세 근거는 학생 선택 후 확인')
         if not self.case_report and not self.results:
             self.resultHeadline.setText(f'저장된 정성평가 {len(self.result_reviews)}명 · 실행 채점 미실행' if self.result_reviews
                                        else '아직 채점 결과가 없습니다. 아래 일괄 채점 버튼을 눌러 시작하세요.')
         if self.gradebook:
-            self.resultLegend.setText(self.resultLegend.text() + '\n최신 점수표: 학생·문제별 최근 실행 + 저장된 수동 조정 점수')
             if not self.grading_active:
                 stopped = self.case_report and self.case_report.state == 'cancelled'
                 self.resultHeadline.setText(('최근 실행 중지됨 · ' if stopped else '') +
@@ -808,15 +824,10 @@ class Gui(QMainWindow):
         table.blockSignals(True)
         table.setSortingEnabled(False)
         table.clearContents()
-        from result_reviews import HEADERS
-        table.setColumnCount(13 + (len(HEADERS) if self.result_reviews else 0))
-        table.setHorizontalHeaderLabels(['학번', '이름', '점수 상태', '총점',
+        from result_reviews import execution_reason
+        self.setResultHeaders(['학번', '이름', '점수 상태', '총점',
             *[f'{TARGETS[t].split(" · ")[0]}\n{POINTS[t]}점' for t in POINTS], '통과 / 전체', '사유'] +
-            (HEADERS if self.result_reviews else []))
-        if (getattr(self,'_result_sort_schema',None)!='midterm' or
-                table.horizontalHeader().sortIndicatorSection() >= table.columnCount()):
-            table.horizontalHeader().setSortIndicator(0,Qt.SortOrder.AscendingOrder)
-        self._result_sort_schema='midterm'
+            self.review_headers, 'midterm')
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(12, QHeaderView.ResizeMode.Interactive)
         table.setColumnWidth(12, 340)
@@ -836,8 +847,9 @@ class Gui(QMainWindow):
                 values.append('—' if problem is None else ('검토' if problem['final_score'] is None else f'{problem["final_score"]:g}'))
                 sort_values.append(problem['final_score'] if problem is not None else None)
             values.append(f'{row["passed_cases"]} / {row["total_cases"]}')
-            values.append(row['reason_short'])
-            sort_values.extend([row['passed_cases'],row['reason_short']])
+            brief = execution_reason(row, [r for r in self.display_rows if r['student'] == row['student']])
+            values.append(brief)
+            sort_values.extend([row['passed_cases'],brief])
             for column, (value,sort_value) in enumerate(zip(values,sort_values)):
                 item = SortableItem(value,sort_value)
                 if column == 0:
