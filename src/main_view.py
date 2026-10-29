@@ -114,6 +114,7 @@ def build_main_view(w):
     w.resultHeadline.setWordWrap(True); grade.addWidget(w.resultHeadline)
     w.resultTable = QTableWidget(0, 6)
     w.resultTable.setWordWrap(False)
+    w.resultTable.horizontalHeader().setHighlightSections(False)
     w.resultTable.setHorizontalHeaderLabels(['학번', '이름', '판정', '기호', '통과 / 전체', '실패 케이스'])
     w.resultTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
     w.resultTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
