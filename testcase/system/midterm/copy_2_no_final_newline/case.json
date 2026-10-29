@@ -1,0 +1,22 @@
+{
+  "name": "copy_2_no_final_newline",
+  "target_file": "copy.c",
+  "sources": [
+    "copy.c"
+  ],
+  "args": [
+    "2",
+    "source.txt",
+    "destination.txt"
+  ],
+  "files": {
+    "destination.txt": "END ABC XYZ 09",
+    "source.txt": "End aBc XYZ 09"
+  },
+  "file_comparison": "exact",
+  "comparison": "regex",
+  "expected": ".*END\\ ABC\\ XYZ\\ 09.*",
+  "timeout": 10,
+  "description": "복사 결과와 원본 불변을 검사. 화면 안내 문구는 허용.",
+  "enabled": false
+}

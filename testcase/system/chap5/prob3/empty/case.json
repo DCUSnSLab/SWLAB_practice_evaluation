@@ -1,0 +1,10 @@
+{
+  "args": [
+    "source.txt",
+    "destination.txt"
+  ],
+  "files": {
+    "destination.txt": ""
+  },
+  "source_slide": 12
+}

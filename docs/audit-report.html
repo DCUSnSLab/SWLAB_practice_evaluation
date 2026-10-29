@@ -1,0 +1,937 @@
+<title>SWLAB 채점 도구 감사</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F5F7F8;
+    --surface: #FFFFFF;
+    --sunk: #EAEFF1;
+    --ink: #16232A;
+    --ink-soft: #4A5C66;
+    --ink-faint: #7C8C95;
+    --rule: #D5DEE2;
+    --rule-soft: #E6ECEE;
+    --accent: #0F6E72;
+    --accent-wash: #E2EFEF;
+    --crit: #A62A21;
+    --crit-wash: #F7E8E6;
+    --warn: #8A5A00;
+    --warn-wash: #F8EFDC;
+    --ok: #1E6B3E;
+    --ok-wash: #E4F0E8;
+    --shadow: 0 1px 2px rgba(22, 35, 42, .06), 0 8px 24px -16px rgba(22, 35, 42, .18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1417;
+      --surface: #141E22;
+      --sunk: #101A1D;
+      --ink: #E4EAEC;
+      --ink-soft: #A5B4BA;
+      --ink-faint: #76888F;
+      --rule: #26343A;
+      --rule-soft: #1C282D;
+      --accent: #4FB8BC;
+      --accent-wash: #13302F;
+      --crit: #EA8177;
+      --crit-wash: #2E1917;
+      --warn: #DCA945;
+      --warn-wash: #2B2312;
+      --ok: #74C290;
+      --ok-wash: #14271C;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D1417;
+    --surface: #141E22;
+    --sunk: #101A1D;
+    --ink: #E4EAEC;
+    --ink-soft: #A5B4BA;
+    --ink-faint: #76888F;
+    --rule: #26343A;
+    --rule-soft: #1C282D;
+    --accent: #4FB8BC;
+    --accent-wash: #13302F;
+    --crit: #EA8177;
+    --crit-wash: #2E1917;
+    --warn: #DCA945;
+    --warn-wash: #2B2312;
+    --ok: #74C290;
+    --ok-wash: #14271C;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans KR', system-ui, sans-serif;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 60px;
+  }
+
+  .prose { max-width: 68ch; }
+
+  h1, h2, h3 {
+    font-family: 'Archivo', 'IBM Plex Sans KR', system-ui, sans-serif;
+    font-weight: 700;
+    text-wrap: balance;
+    margin: 0;
+    line-height: 1.25;
+    letter-spacing: -.015em;
+  }
+  h1 { font-size: clamp(30px, 4.4vw, 44px); }
+  h2 { font-size: clamp(22px, 2.6vw, 27px); }
+  h3 { font-size: 17px; font-weight: 600; letter-spacing: -.005em; }
+  p { margin: 0; }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  code, .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: .875em;
+  }
+  code {
+    background: var(--sunk);
+    padding: .12em .38em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+
+  /* ---------- masthead ---------- */
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-bottom: 34px;
+    border-bottom: 2px solid var(--ink);
+  }
+  .masthead .kicker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    align-items: baseline;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .masthead .kicker strong { color: var(--ink-soft); font-weight: 500; }
+  .verdict {
+    font-size: clamp(17px, 2vw, 20px);
+    line-height: 1.6;
+    color: var(--ink-soft);
+    max-width: 60ch;
+  }
+  .verdict b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- stat row ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(212px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .stat {
+    background: var(--surface);
+    padding: 20px 22px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .stat .figure {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 700;
+    font-size: 32px;
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+  }
+  .stat .figure .unit { font-size: 17px; font-weight: 500; color: var(--ink-faint); margin-left: 2px; }
+  .stat .label { font-size: 13.5px; color: var(--ink-soft); line-height: 1.45; }
+  .stat.is-crit .figure { color: var(--crit); }
+  .stat.is-warn .figure { color: var(--warn); }
+
+  /* ---------- sections ---------- */
+  section { display: flex; flex-direction: column; gap: 22px; }
+  .sec-head { display: flex; flex-direction: column; gap: 9px; }
+  .sec-head p { color: var(--ink-soft); max-width: 68ch; }
+
+  /* ---------- pipeline ---------- */
+  .pipeline {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+    gap: 14px;
+  }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-top: 2px solid var(--accent);
+    border-radius: 3px;
+    padding: 15px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .step .n {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: .1em;
+    color: var(--ink-faint);
+  }
+  .step h3 { font-size: 15px; }
+  .step p { font-size: 13.5px; color: var(--ink-soft); line-height: 1.55; }
+  .step .file { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--accent); }
+
+  /* ---------- tables ---------- */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 15px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  thead th {
+    background: var(--sunk);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--rule);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono, th.mono { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+  td .cmd { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink-soft); word-break: break-word; }
+  .num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+  /* ---------- severity ---------- */
+  .sev {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .sev-high { background: var(--crit-wash); color: var(--crit); }
+  .sev-med { background: var(--warn-wash); color: var(--warn); }
+  .sev-low { background: var(--sunk); color: var(--ink-faint); }
+
+  /* ---------- key findings ---------- */
+  .findings { display: flex; flex-direction: column; gap: 2px; }
+  .finding {
+    background: var(--surface);
+    border-left: 3px solid var(--crit);
+    padding: 17px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .finding:first-child { border-radius: 3px 3px 0 0; }
+  .finding:last-child { border-radius: 0 0 3px 3px; }
+  .finding .top { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+  .finding .id {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+    letter-spacing: .04em;
+  }
+  .finding h3 { flex: 1 1 22ch; }
+  .finding p { font-size: 14.5px; color: var(--ink-soft); max-width: 74ch; }
+  .finding .evidence {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+    padding-top: 4px;
+    border-top: 1px dashed var(--rule);
+    line-height: 1.65;
+  }
+
+  /* ---------- strengths ---------- */
+  .strengths { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 20px 34px; }
+  .strength { display: flex; flex-direction: column; gap: 5px; }
+  .strength h3 { color: var(--ok); }
+  .strength p { font-size: 14px; color: var(--ink-soft); }
+
+  /* ---------- ordered plan ---------- */
+  ol.plan { list-style: none; counter-reset: p; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+  ol.plan li {
+    counter-increment: p;
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  ol.plan li::before {
+    content: counter(p);
+    font-family: 'Archivo', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--accent);
+    background: var(--accent-wash);
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-variant-numeric: tabular-nums;
+  }
+  ol.plan h3 { margin-bottom: 3px; }
+  ol.plan p { font-size: 14.5px; color: var(--ink-soft); max-width: 70ch; }
+  ol.plan .ids { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink-faint); }
+
+  /* ---------- notes / method ---------- */
+  .method {
+    background: var(--sunk);
+    border-radius: 4px;
+    padding: 26px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .method p, .method li { font-size: 14px; color: var(--ink-soft); }
+  .method ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 7px; }
+  .rejected { display: flex; flex-direction: column; gap: 11px; }
+  .rejected .item { display: flex; flex-direction: column; gap: 3px; }
+  .rejected .item .h { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+  .rejected .item .h .strike { text-decoration: line-through; text-decoration-color: var(--ink-faint); }
+
+  ul.plain { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 8px; }
+  ul.plain li { color: var(--ink-soft); }
+  ul.plain li b { color: var(--ink); font-weight: 600; }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 22px;
+    font-size: 13px;
+    color: var(--ink-faint);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  @media (max-width: 620px) {
+    .page { padding: 36px 18px 64px; gap: 46px; }
+    .finding { padding: 15px 16px; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="kicker">
+      <span><strong>SWLAB_practice_evaluation</strong></span>
+      <span>코드 감사</span>
+      <span>브랜치 GEN-850_evaluation</span>
+      <span>HEAD e6f13ff</span>
+      <span>2026-09-10</span>
+    </div>
+    <h1>실습 자동채점 도구 감사 보고서</h1>
+    <p class="verdict">
+      학생 GitHub 저장소를 일괄 수집해 텍스트 테스트케이스로 자동 채점하는 PyQt6 도구입니다.
+      설계 방향은 타당하고 실제로 쓰이며 다듬어지고 있습니다. 다만 지금 상태에서는
+      <b>성적이 학생 코드보다 조교가 누른 실행 모드 라디오와 학생의 폴더 작명에 더 크게 좌우됩니다.</b>
+      자동 결과를 사람이 재확인하는 전제에서만 쓰는 것이 안전합니다.
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat is-crit">
+      <div class="figure">54<span class="unit">%</span></div>
+      <div class="label">자동 채점이 소스를 찾지 못하는 문제 폴더 비율. 2025년 3분반 1,163개 중 626개</div>
+    </div>
+    <div class="stat is-crit">
+      <div class="figure">0<span class="unit">건</span></div>
+      <div class="label">채점 결과의 파일 기록. 화면 텍스트 창이 유일한 기록이며 성적표 출력 수단이 없음</div>
+    </div>
+    <div class="stat is-warn">
+      <div class="figure">13<span class="unit">/30</span></div>
+      <div class="label">채점기 산출물로 작업 트리가 오염된 학생 저장소. 잔존 바이너리 2,818개</div>
+    </div>
+    <div class="stat">
+      <div class="figure">73<span class="unit">건</span></div>
+      <div class="label">검증을 통과한 결함. 심각 19건, 보통 29건, 경미 25건</div>
+    </div>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">무엇을 하는 도구인가</span>
+      <h2>수집에서 판정까지 다섯 단계</h2>
+      <p>
+        조교가 수강생 명단 CSV를 고르면 학생 저장소를 한꺼번에 받아오고, 학번 폴더를 훑어
+        과제별로 프로그램을 실행한 뒤 기대 출력과 글자 단위로 비교합니다. 애매한 제출물은
+        수동 실행 탭과 코드 미리보기로 직접 확인합니다.
+      </p>
+    </div>
+    <div class="pipeline">
+      <div class="step">
+        <span class="n">01 수집</span>
+        <h3>명단 읽기</h3>
+        <p>학번, 이름, 저장소 주소 세 열을 헤더 없이 읽습니다. 연도는 CSV가 담긴 상위 폴더 이름에서 가져옵니다.</p>
+        <span class="file">evaluator.py</span>
+      </div>
+      <div class="step">
+        <span class="n">02 동기화</span>
+        <h3>일괄 받아오기</h3>
+        <p>학생마다 폴더가 있으면 pull, 없으면 clone 합니다. 실패해도 로그만 남기고 다음 학생으로 넘어갑니다.</p>
+        <span class="file">gitmanager.py</span>
+      </div>
+      <div class="step">
+        <span class="n">03 탐색</span>
+        <h3>과제 고르기</h3>
+        <p>연도, 분반, 학생, 챕터, 문제를 차례로 좁혀 갑니다. 목록은 모두 학생이 만든 실제 폴더명에서 나옵니다.</p>
+        <span class="file">gui.py</span>
+      </div>
+      <div class="step">
+        <span class="n">04 실행</span>
+        <h3>돌려 보기</h3>
+        <p>표준 입력과 인자를 넣고 10초 제한으로 실행합니다. 환경은 Windows, WSL, Linux, Docker 중에서 고릅니다.</p>
+        <span class="file">grader.py</span>
+      </div>
+      <div class="step">
+        <span class="n">05 판정</span>
+        <h3>맞춰 보기</h3>
+        <p>줄바꿈을 맞추고 앞뒤 공백을 떼어 낸 뒤 완전히 같은지 봅니다. 결과는 화면에만 남습니다.</p>
+        <span class="file">grader.py</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">구조</span>
+      <h2>여덟 개 모듈, 두 개의 진입점</h2>
+      <p>
+        표시, 조회, 실행, 수집이 파일 단위로 분리되어 있고 순환 의존이 없습니다. 특히 실행기는
+        화면 요소에 의존하지 않아 화면 없이 단독으로 불러 검증할 수 있습니다. 이번 감사에서 실제로
+        그렇게 동작을 확인했습니다.
+      </p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>모듈</th><th class="num">줄</th><th>역할</th><th>상태</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">main.py</td><td class="num">7</td><td>채점 화면 진입점</td><td>사용</td></tr>
+          <tr><td class="mono">gui.py</td><td class="num">741</td><td>네 개 열로 나뉜 주 화면, 채점 리포트, 수동 실행 탭</td><td>사용</td></tr>
+          <tr><td class="mono">evaluator.py</td><td class="num">343</td><td>명단 읽기, 폴더 탐색, 파일 추가·삭제, 채점 지휘, 로그 서식</td><td>사용</td></tr>
+          <tr><td class="mono">grader.py</td><td class="num">341</td><td>네 환경별 실행, 테스트케이스 적재, 출력 비교</td><td>사용</td></tr>
+          <tr><td class="mono">gitmanager.py</td><td class="num">50</td><td>학생 저장소 clone 및 pull</td><td>사용</td></tr>
+          <tr><td class="mono">lecture.py / student.py</td><td class="num">54</td><td>강좌와 학생 자료 구조, 폴더명 규칙</td><td>사용</td></tr>
+          <tr><td class="mono">case_generator.py</td><td class="num">201</td><td>정답 코드를 실제로 돌려 기대 출력을 만드는 별도 창</td><td>사용, 주 화면과 미연결</td></tr>
+          <tr><td class="mono">dbbase.py / swlab_db.py / chapter.py</td><td class="num">111</td><td>2023년에 만든 데이터베이스 계층</td><td>미연결, 불러오면 실패</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p style="color: var(--ink-soft)">
+        디렉터리 규약은 네 갈래로 갈라져 있습니다. 학생 코드는 <code>src/origin/과목_분반_연도/학번/</code>,
+        테스트케이스는 <code>testcase/과목/챕터/문제/</code>에 두는데, 케이스 생성기는 결과를
+        <code>testdata/폴더명/testcases/…</code>에 저장하고 그 위치를 읽는 코드는 호출되지 않습니다.
+        즉 생성기로 만든 케이스를 채점기가 기본 경로에서 찾지 못합니다.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">실행 환경</span>
+      <h2>같은 코드, 네 가지 다른 결과</h2>
+      <p>
+        네 환경은 서로 다른 명령을 만들고 서로 다른 정리 동작을 합니다. 문제는 이 차이가
+        채점 결과를 바꾼다는 점입니다. 수학 함수를 쓰는 정상적인 C 코드는 컨테이너와 리눅스에서
+        링크에 실패하지만 Windows에서는 통과합니다.
+      </p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>환경</th><th>파이썬</th><th>C 컴파일</th><th>산출물 정리</th><th>실행 위치</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Docker</b><br><span class="sev sev-low">기본값</span></td>
+            <td><span class="cmd">docker exec … python3</span></td>
+            <td><span class="cmd">sh -c "gcc -o main *.c &amp;&amp; ./main"</span></td>
+            <td>없음, 학생 폴더에 남음</td>
+            <td>컨테이너 작업 디렉터리</td>
+          </tr>
+          <tr>
+            <td><b>WSL</b></td>
+            <td><span class="cmd">wsl python3 /mnt/c/…</span></td>
+            <td><span class="cmd">wsl bash -c 'gcc -o … *.c'</span></td>
+            <td>없음, 학생 폴더에 남음</td>
+            <td>지정 안 됨, 상대 경로 파일 못 읽음</td>
+          </tr>
+          <tr>
+            <td><b>Linux</b></td>
+            <td><span class="cmd">python3 …</span></td>
+            <td><span class="cmd">gcc -o "…/main" "…"/*.c</span> 셸 경유</td>
+            <td>실행 후 삭제</td>
+            <td>학생 폴더</td>
+          </tr>
+          <tr>
+            <td><b>Windows</b></td>
+            <td><span class="cmd">python …</span></td>
+            <td><span class="cmd">gcc -o "…\main.exe" "…\*.c"</span> 셸 경유</td>
+            <td>실행 후 삭제</td>
+            <td>학생 폴더</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p style="color: var(--ink-soft)">
+        네 환경 모두 컴파일 명령이 한 줄로 고정되어 있어 링크 옵션을 줄 수 없고, 지정한 파일 대신
+        폴더 안의 모든 <code>.c</code>를 한꺼번에 링크합니다. 실측한 저장소에서 <code>.c</code>가 둘 이상인
+        폴더가 801개이고, 표본 300개 중 230개에서 두 개 이상의 파일이 각자
+        <code>main</code>을 정의하고 있어 중복 정의로 링크가 깨집니다. 수동 실행 탭은 Linux 선택을
+        아예 무시하고 Windows 명령으로 돌립니다.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">심각 결함</span>
+      <h2>채점 신뢰성을 직접 깨는 것들</h2>
+      <p>
+        아래 일곱 건은 학생의 코드가 맞았는지와 무관하게 결과를 바꿉니다. 모두 코드를 직접 읽고
+        실측으로 재현해 확정했습니다.
+      </p>
+    </div>
+    <div class="findings">
+
+      <div class="finding">
+        <div class="top">
+          <span class="id">F06</span>
+          <h3>파일 이름이 <code>main</code>이 아니면 채점 자체가 되지 않는다</h3>
+          <span class="sev sev-high">심각</span>
+        </div>
+        <p>
+          자동 채점은 대상 파일을 넘기지 않고 폴더에서 <code>main.py</code>와 <code>main.c</code>만 찾습니다.
+          없으면 소스를 찾을 수 없다는 실패로 끝나고, 요약에는 0점처럼 남습니다. 파이썬 과목 제출물은
+          대부분 문제 번호를 파일명으로 쓰기 때문에 사실상 전원이 여기에 걸립니다.
+        </p>
+        <div class="evidence">
+          실측 · 2025년 3분반 문제 폴더 1,163개 중 626개가 다른 이름의 소스만 보유<br>
+          실측 · 파이썬 과목 제출 파일명 상위: prob1.py 142개, prob2.py 118개, prob3.py 115개, main.py 32개
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="top">
+          <span class="id">F10</span>
+          <h3>문제 폴더가 없는 챕터에서는 직전 문제의 정답으로 채점한다</h3>
+          <span class="sev sev-high">심각</span>
+        </div>
+        <p>
+          테스트케이스 경로는 문제를 고를 때만 갱신됩니다. 하위 문제 폴더가 없는 챕터로 옮기면
+          경로 칸이 비워지지 않고 이전 값이 그대로 남으며, 채점 시작 전 검사는 그 경로가 존재하는지만
+          봅니다. 결과적으로 다른 문제의 정답과 비교한 판정이 조용히 나옵니다. 파이썬 과목은 문제 폴더 없이
+          챕터에 파일을 직접 두는 구조라 상시 해당됩니다.
+        </p>
+        <div class="evidence">
+          gui.py:452 경로 갱신 함수가 문제값이 비면 즉시 반환 · gui.py:589 존재 여부만 확인<br>
+          실측 · 파이썬 4개 분반 전부 챕터 하위에 문제 폴더 없음
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="top">
+          <span class="id">F13</span>
+          <h3>여러 학생을 함께 채점하면 첫 학생의 폴더명이 전원에게 강제된다</h3>
+          <span class="sev sev-high">심각</span>
+        </div>
+        <p>
+          챕터와 문제 목록은 선택 목록의 첫 학생 폴더에서만 채워지고, 그 문자열이 선택된 모든 학생에게
+          그대로 적용됩니다. 폴더명을 조금 다르게 쓴 학생은 디렉터리를 찾을 수 없다는 실패로 끝납니다.
+          전원이 같은 챕터 폴더를 가진 분반은 하나도 없었습니다.
+        </p>
+        <div class="evidence">
+          실측 · 9개 분반 중 8개는 전원 공통 챕터 0개<br>
+          실측 · 2025년 3분반 30명 중 chap3 보유 24명, 나머지 6명은 실패 처리
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="top">
+          <span class="id">A2</span>
+          <h3>컴파일 옵션을 줄 수 없어 정상 코드가 환경에 따라 갈린다</h3>
+          <span class="sev sev-high">심각</span>
+        </div>
+        <p>
+          컴파일 명령이 네 환경 모두 한 줄로 굳어 있어 링크할 라이브러리나 표준을 지정할 방법이
+          화면에도 케이스 형식에도 없습니다. 리눅스 계열은 수학 함수에 별도 링크를 요구하므로
+          컨테이너, 리눅스, WSL에서는 컴파일이 실패하고 Windows에서는 같은 코드가 통과합니다.
+        </p>
+        <div class="evidence">
+          실측 · 프로젝트 Dockerfile로 빌드한 이미지에서 sqrt 사용 코드 컴파일 시 undefined reference,
+          -lm 추가 시 정상<br>
+          실측 · 같은 이미지에 make, g++, pip 없음. Makefile 제출이나 C++ 혼용 과제는 채점 대상이 될 수 없음
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="top">
+          <span class="id">A1</span>
+          <h3>결과가 어디에도 저장되지 않고, 예외 한 번에 기록째 사라진다</h3>
+          <span class="sev sev-high">심각</span>
+        </div>
+        <p>
+          채점 결과의 유일한 기록은 화면의 텍스트 창입니다. 구조화된 결과를 담은 신호는 보내지만
+          받는 곳이 없고, 파일 로그는 주석 처리되어 꺼져 있으며 데이터베이스 계층은 연결되지 않았습니다.
+          성적표를 만들 수단이 없어 화면을 읽어 손으로 옮겨야 하고, 채점 루프에 예외 처리가 없어
+          한 번의 오류로 배치 전체 기록이 날아갑니다.
+        </p>
+        <div class="evidence">
+          evaluator.py:228 결과 신호를 받는 코드가 전체 소스에 없음 · setup_logging.py:19 파일 로그 주석 처리<br>
+          gui.py:608 채점 루프에 예외 처리 없음 · 실측 · 슬롯에서 예외 발생 시 프로세스가 추적 정보 없이 종료
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="top">
+          <span class="id">F05</span>
+          <h3>채점이 학생 저장소를 직접 건드려 제출물을 훼손한다</h3>
+          <span class="sev sev-high">심각</span>
+        </div>
+        <p>
+          보조 입력 파일을 학생 폴더에 복사한 뒤 채점이 끝나면 같은 이름의 파일을 지웁니다.
+          학생이 같은 이름의 파일을 커밋해 두었다면 그 파일이 사라지고, 컨테이너와 WSL에서는
+          컴파일 산출물이 정리되지 않고 그대로 쌓입니다. 다음 동기화에서 충돌이 나고,
+          재채점 결과가 첫 채점과 달라집니다.
+        </p>
+        <div class="evidence">
+          grader.py:305 복사 · grader.py:321 삭제, 둘 다 사전 확인 없음<br>
+          실측 · 2025년 3분반 저장소 30개 중 13개가 오염 상태, 잔존 바이너리 2,818개
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="top">
+          <span class="id">F14</span>
+          <h3>명단 파일 형식이 조금만 달라도 앱이 그대로 종료된다</h3>
+          <span class="sev sev-high">심각</span>
+        </div>
+        <p>
+          명단은 검증 없이 읽습니다. 헤더 행이 있거나 빈 줄이 섞이거나 열이 부족하거나 인코딩이
+          다르면 작업 스레드에서 예외가 나고, 이 경우 화면이 오류를 표시하지 못한 채 프로세스가 끝납니다.
+          파일 경로에 숫자가 없으면 분반 추출에서도 같은 결과가 됩니다.
+        </p>
+        <div class="evidence">
+          evaluator.py:58 열 접근과 정수 변환에 검증 없음 · gui.py:17 작업 함수에 예외 처리 없음<br>
+          실측 · 네 가지 형식 오류를 실제 작업 스레드에 넣어 재현, 추적 정보 없이 종료
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">데이터 안전</span>
+      <h2>개인정보와 격리</h2>
+    </div>
+    <ul class="plain">
+      <li>
+        <b>학생 개인정보가 저장소 이력에 있습니다.</b> 학번, 이름, 저장소 주소가 담긴 명단 8개와
+        sqlite 파일이 2023년 커밋부터 추적되고 있습니다. 무시 규칙은 clone된 학생 코드만 막고
+        명단은 막지 않습니다. 아직 커밋되지 않은 2025, 2026 폴더도 규칙이 없어 다음 일괄 추가에 함께 올라갑니다.
+        <span class="sev sev-high" style="margin-left:6px">F01</span>
+      </li>
+      <li>
+        <b>컨테이너 격리가 사실상 없습니다.</b> 프로젝트 루트 전체가 읽기 쓰기로 마운트되고 root로 실행되며
+        메모리, 프로세스 수, 네트워크 제한이 없습니다. 학생 코드가 다른 학생의 제출물과 정답 파일,
+        명단 파일에 접근하고 수정할 수 있습니다.
+        <span class="sev sev-high" style="margin-left:6px">F02</span>
+      </li>
+      <li>
+        <b>세 환경은 격리가 아예 없습니다.</b> Windows, Linux, WSL 모드는 신뢰할 수 없는 학생 코드를
+        조교 계정 권한으로 호스트에서 그대로 실행합니다. 보호 장치는 10초 제한과 출력 읽기 상한뿐입니다.
+        <span class="sev sev-high" style="margin-left:6px">F03</span>
+      </li>
+      <li>
+        <b>출력량에 상한이 없습니다.</b> 무한 출력 코드는 제한 시간 동안 임시 디스크를 채웁니다.
+        실측에서 한 프로세스가 10초 안에 5.4 GiB를 기록했습니다. 코드 주석은 1 MB 제한이 있다고
+        적었지만 그 값은 읽는 양에만 적용됩니다.
+        <span class="sev sev-med" style="margin-left:6px">A3</span>
+      </li>
+      <li>
+        <b>제한 시간이 지나도 학생 프로세스가 살아남습니다.</b> 종료 신호는 컨테이너 클라이언트만
+        끝내므로 컨테이너 안의 프로그램은 계속 돌아갑니다. 채점을 반복하면 좀비 프로세스가 쌓입니다.
+        <span class="sev sev-high" style="margin-left:6px">F09</span>
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">잘 되어 있는 점</span>
+      <h2>우연이 아닌 선택들</h2>
+      <p>결함 목록만 보면 놓치기 쉬운, 문제를 이해하고 내린 판단으로 보이는 대목들입니다.</p>
+    </div>
+    <div class="strengths">
+      <div class="strength">
+        <h3>프로세스 실행 방식</h3>
+        <p>출력을 파이프가 아닌 임시 파일로 받아 제한 시간을 거는 구조라 출력이 많을 때 생기는
+          교착이 원천적으로 없습니다. 실측에서 5.4 GiB를 뱉는 프로그램에도 정확히 10초에 끊겼습니다.
+          채점기를 처음 만들 때 가장 흔히 밟는 함정을 피했습니다.</p>
+      </div>
+      <div class="strength">
+        <h3>줄바꿈 정규화</h3>
+        <p>출력 비교 전에 줄바꿈을 통일하고 테스트케이스도 텍스트 모드로 읽습니다.
+          Windows와 리눅스가 섞인 환경에서 가장 흔한 오채점 원인 하나가 막혀 있습니다.</p>
+      </div>
+      <div class="strength">
+        <h3>계층 분리</h3>
+        <p>실행기가 화면 요소에 의존하지 않아 화면 없이 불러 검증할 수 있습니다.
+          회귀 테스트를 붙이기 쉬운 형태라는 점이 실질적인 자산입니다.</p>
+      </div>
+      <div class="strength">
+        <h3>정답을 직접 실행해 만드는 케이스 생성</h3>
+        <p>기대 출력을 손으로 적는 대신 정답 코드를 실제로 돌려 만들고, 그 실행에 채점기와
+          같은 실행기를 재사용합니다. 생성 경로와 채점 경로의 동작을 일치시키려는 의도가 분명합니다.</p>
+      </div>
+      <div class="strength">
+        <h3>컨테이너를 기본값으로</h3>
+        <p>격리를 지향한 방향 자체는 옳고, 이미지도 최소한으로 유지되어 있습니다.
+          컨테이너 쪽은 한글 출력 인코딩 문제에서도 자유롭습니다.</p>
+      </div>
+      <div class="strength">
+        <h3>실사용에서 나온 최근 개선</h3>
+        <p>숨김 폴더 제외, 숫자 기준 정렬, 빈 학생 폴더 명시, 코드 미리보기 분리, 수동 실행 인자 입력.
+          모두 조교가 화면 앞에서 겪는 불편을 정확히 겨냥했습니다. 방치된 도구가 아니라는 신호입니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">고칠 순서</span>
+      <h2>새 기능보다 먼저</h2>
+      <p>채점 신뢰성과 데이터 안전을 앞에 두고, 서로 얽힌 것끼리 묶었습니다.</p>
+    </div>
+    <ol class="plan">
+      <li>
+        <div>
+          <h3>개인정보를 저장소에서 분리</h3>
+          <p>명단과 데이터베이스 파일을 추적에서 빼고 무시 규칙을 추가합니다. 이미 원격에 올라간
+            이력 정리는 별도 판단이 필요하니, 우선 새 커밋에 더 들어가지 않게 막는 것이 먼저입니다.</p>
+          <span class="ids">F01</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>채점을 학생 저장소 사본에서 수행</h3>
+          <p>학생 작업 트리에 직접 쓰지 않도록 임시 사본을 만들어 채점하고, 끝나면 사본을 버립니다.
+            보조 파일 복사와 산출물 정리 문제, 재채점 결과가 달라지는 문제가 한꺼번에 사라집니다.</p>
+          <span class="ids">F05 · F33 · F41</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>대상 파일 지정과 폴더명 매핑 도입</h3>
+          <p>과제별 표준 경로와 대상 파일을 조교가 선언하고, 학생별 폴더명 별칭을 등록할 수 있게 합니다.
+            지금은 기대 경로를 학생이 만든 폴더명에서 거꾸로 조립하기 때문에 규약을 지키지 않은 학생을
+            정상 채점할 방법이 원리적으로 없습니다.</p>
+          <span class="ids">F06 · F10 · F13 · F47</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>결과 영속화와 실행 조건 기록</h3>
+          <p>결과를 CSV나 JSON으로 내보내고, 실행 모드와 테스트케이스 버전, 실행 시각을 함께 남깁니다.
+            이미 보내고 있는 결과 신호를 받는 쪽만 만들면 됩니다. 이의제기 대응과 사후 검증의 전제입니다.</p>
+          <span class="ids">A1 · A6</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>실행 모드 판정 일원화와 예외 처리</h3>
+          <p>세 곳에 복사된 모드 판정을 한 곳으로 모으고, 채점 경로와 명단 읽기에 예외 경계를 둡니다.
+            그 다음 가짜 저장소와 가짜 케이스로 파이프라인 전체를 검증하는 테스트를 붙입니다.
+            실행기가 화면에 의존하지 않으니 붙이기 어렵지 않습니다.</p>
+          <span class="ids">F11 · F14 · F25 · F67</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>컴파일 옵션과 케이스 형식 확장</h3>
+          <p>테스트케이스에 배점, 제한 시간, 대상 파일, 비교 방식, 컴파일 옵션을 담을 수 있게 합니다.
+            지금은 모든 문제가 완전일치 비교와 10초 제한, 동일 가중치라는 단일 규칙으로만 채점됩니다.</p>
+          <span class="ids">A2 · A7 · F48</span>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">전체 목록</span>
+      <h2>확정 결함 73건</h2>
+      <p>
+        여덟 관점에서 133건이 보고되어 67건으로 병합되었고, 결함마다 독립 검증자가 반박을 시도해
+        65건이 살아남았습니다. 여기에 완결성 점검에서 8건이 추가되었습니다.
+      </p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>심각도</th><th>위치</th><th>내용</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">F01</td><td><span class="sev sev-high">심각</span></td><td class="mono">.gitignore</td><td>학생 개인정보 명단 8개와 sqlite가 2023년부터 git에 추적됨</td></tr>
+          <tr><td class="mono">F02</td><td><span class="sev sev-high">심각</span></td><td class="mono">docker-compose.yml:9</td><td>루트 전체 읽기쓰기 마운트, root 실행, 자원·네트워크 제한 없음</td></tr>
+          <tr><td class="mono">F03</td><td><span class="sev sev-high">심각</span></td><td class="mono">grader.py:132</td><td>Windows·Linux·WSL 모드는 학생 코드를 조교 계정으로 호스트에서 실행</td></tr>
+          <tr><td class="mono">F04</td><td><span class="sev sev-high">심각</span></td><td class="mono">gitmanager.py:15</td><td>clone 경로가 실행 디렉터리 상대라 다른 모듈과 어긋남</td></tr>
+          <tr><td class="mono">F05</td><td><span class="sev sev-high">심각</span></td><td class="mono">grader.py:314</td><td>채점이 학생 작업 트리를 덮어쓰고 삭제해 제출물 훼손</td></tr>
+          <tr><td class="mono">F06</td><td><span class="sev sev-high">심각</span></td><td class="mono">grader.py:318</td><td>자동 채점이 main.py/main.c만 탐색해 다수 제출물 채점 불가</td></tr>
+          <tr><td class="mono">F07</td><td><span class="sev sev-high">심각</span></td><td class="mono">grader.py:92</td><td>C 컴파일이 폴더 전체 .c를 링크해 대상 파일 지정을 무시</td></tr>
+          <tr><td class="mono">F09</td><td><span class="sev sev-high">심각</span></td><td class="mono">grader.py:194</td><td>제한 시간 후 컨테이너 내부 학생 프로세스가 계속 실행됨</td></tr>
+          <tr><td class="mono">F10</td><td><span class="sev sev-high">심각</span></td><td class="mono">gui.py:452</td><td>문제 폴더 없는 챕터에서 직전 문제의 테스트케이스로 채점</td></tr>
+          <tr><td class="mono">F11</td><td><span class="sev sev-high">심각</span></td><td class="mono">gui.py:629</td><td>모드 판정이 세 곳에 중복되어 수동 실행이 Linux 선택을 무시</td></tr>
+          <tr><td class="mono">F12</td><td><span class="sev sev-high">심각</span></td><td class="mono">gui.py:608</td><td>채점이 화면 스레드에서 동기 실행되어 화면이 멈추고 중복 클릭이 큐에 쌓임</td></tr>
+          <tr><td class="mono">F13</td><td><span class="sev sev-high">심각</span></td><td class="mono">gui.py:601</td><td>다중 선택 시 첫 학생의 폴더명을 전원에게 강제</td></tr>
+          <tr><td class="mono">F14</td><td><span class="sev sev-high">심각</span></td><td class="mono">evaluator.py:58</td><td>명단 형식 이상 시 검증 없는 파싱으로 앱이 종료</td></tr>
+          <tr><td class="mono">F15</td><td><span class="sev sev-high">심각</span></td><td class="mono">gitmanager.py:40</td><td>clone 실패 후 남은 빈 폴더를 pull 대상으로 오인해 영구 실패</td></tr>
+          <tr><td class="mono">F17</td><td><span class="sev sev-high">심각</span></td><td class="mono">evaluator.py:41</td><td>경로 문자열에서 과목·분반을 추출해 오분류, 생성 불가한 폴더명 발생</td></tr>
+          <tr><td class="mono">F18</td><td><span class="sev sev-high">심각</span></td><td class="mono">evaluator.py:288</td><td>shutil 미import로 파일 추가 기능이 항상 실패</td></tr>
+          <tr><td class="mono">F21</td><td><span class="sev sev-high">심각</span></td><td class="mono">grader.py:123</td><td>Linux·WSL 컴파일 명령에 경로를 인용 없이 삽입, 셸 해석 위험과 공백 경로 실패</td></tr>
+          <tr><td class="mono">A1</td><td><span class="sev sev-high">심각</span></td><td class="mono">evaluator.py:228</td><td>결과가 영속되지 않고 채점 경로 예외로 기록째 소실</td></tr>
+          <tr><td class="mono">A2</td><td><span class="sev sev-high">심각</span></td><td class="mono">grader.py:92</td><td>컴파일 옵션 지정 수단이 없어 정상 C 코드가 환경에 따라 갈림</td></tr>
+
+          <tr><td class="mono">F16</td><td><span class="sev sev-med">보통</span></td><td class="mono">gitmanager.py:41</td><td>인증이 필요한 저장소에서 자격증명 창이 학생 수만큼 반복되어 동기화 중단</td></tr>
+          <tr><td class="mono">F19</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:161</td><td>WSL 모드만 실행 위치가 지정되지 않아 상대 경로 파일 접근 실패</td></tr>
+          <tr><td class="mono">F20</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:94</td><td>컨테이너 C 모드가 인자를 셸 문자열로 합쳐 메타문자가 해석됨</td></tr>
+          <tr><td class="mono">F22</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:134</td><td>Windows 모드에서 한글 출력이 cp949로 처리되어 오채점</td></tr>
+          <tr><td class="mono">F23</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:188</td><td>종료 코드가 0이 아니면 출력 비교 없이 실패 처리</td></tr>
+          <tr><td class="mono">F24</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:203</td><td>제한 시간 초과가 원인 불명 오류로 보고되고 부분 출력이 버려짐</td></tr>
+          <tr><td class="mono">F25</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:44</td><td>설정값 없는 호출이 검사 전 접근으로 반드시 예외 발생</td></tr>
+          <tr><td class="mono">F26</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:34</td><td>프로젝트 밖 경로나 다른 드라이브를 컨테이너 경로로 변환하지 못함</td></tr>
+          <tr><td class="mono">F27</td><td><span class="sev sev-med">보통</span></td><td class="mono">evaluator.py:253</td><td>학생 출력을 이스케이프 없이 서식 있는 로그에 삽입해 표시가 깨지고 위장 가능</td></tr>
+          <tr><td class="mono">F28</td><td><span class="sev sev-med">보통</span></td><td class="mono">gui.py:736</td><td>로그 색상이 부분 문자열 매칭이라 통과·실패 표시가 오탐</td></tr>
+          <tr><td class="mono">F29</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:278</td><td>정답 파일을 엄격한 인코딩으로 읽어 BOM이나 cp949 파일에서 전원 실패</td></tr>
+          <tr><td class="mono">F30</td><td><span class="sev sev-med">보통</span></td><td class="mono">case_generator.py:172</td><td>테스트케이스 경로 규약이 세 갈래로 갈려 생성한 케이스를 채점기가 못 찾음</td></tr>
+          <tr><td class="mono">F31</td><td><span class="sev sev-med">보통</span></td><td class="mono">case_generator.py:133</td><td>안내 문구가 검증 없이 경로 구성요소로 사용됨</td></tr>
+          <tr><td class="mono">F32</td><td><span class="sev sev-med">보통</span></td><td class="mono">gui.py:363</td><td>빈 폴더 표시용 문구가 실제 폴더명처럼 채점·실행에 사용됨</td></tr>
+          <tr><td class="mono">F33</td><td><span class="sev sev-med">보통</span></td><td class="mono">evaluator.py:305</td><td>파일 생성·추가·삭제가 확인 없이 학생 작업 트리를 변경</td></tr>
+          <tr><td class="mono">F34</td><td><span class="sev sev-med">보통</span></td><td class="mono">gui.py:710</td><td>동기화 진행 중에도 채점·파일 편집이 가능하고 완료 시 선택이 초기화됨</td></tr>
+          <tr><td class="mono">F36</td><td><span class="sev sev-med">보통</span></td><td class="mono">gitmanager.py:34</td><td>이력 재작성이나 로컬 변경 충돌 시 pull이 매번 실패하고 복구 수단이 없음</td></tr>
+          <tr><td class="mono">F37</td><td><span class="sev sev-med">보통</span></td><td class="mono">evaluator.py:39</td><td>연도 폴더 밖 명단은 2025로 고정되어 다른 연도에 조용히 병합됨</td></tr>
+          <tr><td class="mono">F38</td><td><span class="sev sev-med">보통</span></td><td class="mono">gui.py:716</td><td>동기화 실패가 있어도 무조건 성공 배너를 표시</td></tr>
+          <tr><td class="mono">F41</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:314</td><td>학생 저장소의 심볼릭 링크를 호스트 파일 작업이 그대로 추종</td></tr>
+          <tr><td class="mono">F43</td><td><span class="sev sev-med">보통</span></td><td class="mono">README.md:4</td><td>문서와 의존성, 실제 개발 환경이 세 겹으로 어긋나고 실행 요건이 누락</td></tr>
+          <tr><td class="mono">F47</td><td><span class="sev sev-med">보통</span></td><td class="mono">gui.py:468</td><td>파이썬 과목은 챕터·문제 계층이 없어 기본 테스트케이스 경로가 항상 부재</td></tr>
+          <tr><td class="mono">F53</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:126</td><td>컴파일 단계와 입력 쓰기에 제한 시간이 없어 화면이 영구 정지 가능</td></tr>
+          <tr><td class="mono">A3</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:178</td><td>출력 기록량에 상한이 없어 임시 디스크 고갈 가능, 주석은 없는 보호를 주장</td></tr>
+          <tr><td class="mono">A4</td><td><span class="sev sev-med">보통</span></td><td class="mono">testcase/…/test.txt</td><td>줄바꿈 속성 파일이 없어 보조 입력 파일 바이트가 조교 PC마다 달라짐</td></tr>
+          <tr><td class="mono">A5</td><td><span class="sev sev-med">보통</span></td><td class="mono">case_generator.py:174</td><td>케이스 재생성 시 옛 입력이 남아 정답과 모순된 케이스가 조용히 생성됨</td></tr>
+          <tr><td class="mono">A6</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:85</td><td>컨테이너 가동 여부를 확인하지 않아 정지 상태면 전원이 0점처럼 기록됨</td></tr>
+          <tr><td class="mono">A7</td><td><span class="sev sev-med">보통</span></td><td class="mono">grader.py:223</td><td>케이스 형식이 텍스트 3종뿐이라 배점·제한 시간·비교 방식을 표현할 수 없음</td></tr>
+          <tr><td class="mono">A8</td><td><span class="sev sev-med">보통</span></td><td class="mono">gui.py:612</td><td>케이스가 0건이어도 조용히 통과하고 완료 표시가 나옴</td></tr>
+
+          <tr><td class="mono">F39</td><td><span class="sev sev-low">경미</span></td><td class="mono">lecture.py:14</td><td>공유 로거 이름을 생성자마다 덮어써 로그 출처가 뒤바뀜</td></tr>
+          <tr><td class="mono">F40</td><td><span class="sev sev-low">경미</span></td><td class="mono">evaluator.py:88</td><td>과거 명명 규칙 폴더가 연도 목록에 1로 노출</td></tr>
+          <tr><td class="mono">F42</td><td><span class="sev sev-low">경미</span></td><td class="mono">requirements.txt:2</td><td>GitPython 고정 버전이 공개 권고 반영 이전이고 clone에 크기·깊이 제한 없음</td></tr>
+          <tr><td class="mono">F44</td><td><span class="sev sev-low">경미</span></td><td class="mono">swlab_db.py:2</td><td>데이터베이스 계층이 2023년 이후 미연결이고 불러오기 규약도 불일치</td></tr>
+          <tr><td class="mono">F45</td><td><span class="sev sev-low">경미</span></td><td class="mono">dbbase.py:12</td><td>커밋된 sqlite 스키마가 현재 모델과 불일치, 이름 유일 제약 잔존</td></tr>
+          <tr><td class="mono">F46</td><td><span class="sev sev-low">경미</span></td><td class="mono">lecture.py:8</td><td>식별자 필드에 연도를 넣고 학번과 중복시켜 의미가 혼용됨</td></tr>
+          <tr><td class="mono">F48</td><td><span class="sev sev-low">경미</span></td><td class="mono">grader.py:219</td><td>전체 공백 제거 비교로 줄 끝 공백은 실패, 앞 공백과 빈 줄 차이는 통과</td></tr>
+          <tr><td class="mono">F49</td><td><span class="sev sev-low">경미</span></td><td class="mono">grader.py:276</td><td>인자를 공백으로만 나눠 따옴표 포함 인자를 표현할 수 없음</td></tr>
+          <tr><td class="mono">F50</td><td><span class="sev sev-low">경미</span></td><td class="mono">grader.py:257</td><td>정답 파일을 가진 모든 하위 폴더를 케이스로 취급</td></tr>
+          <tr><td class="mono">F51</td><td><span class="sev sev-low">경미</span></td><td class="mono">grader.py:55</td><td>소스가 아닌 파일을 고르면 조용히 기본 파일이 실행되는데 화면은 선택 파일로 표시</td></tr>
+          <tr><td class="mono">F52</td><td><span class="sev sev-low">경미</span></td><td class="mono">grader.py:321</td><td>실행 중 예외가 나면 보조 파일 정리가 건너뛰어짐</td></tr>
+          <tr><td class="mono">F54</td><td><span class="sev sev-low">경미</span></td><td class="mono">grader.py:134</td><td>모드에 따라 python과 python3를 달리 호출해 결과가 환경마다 달라질 수 있음</td></tr>
+          <tr><td class="mono">F55</td><td><span class="sev sev-low">경미</span></td><td class="mono">grader.py:20</td><td>네트워크 경로 변환이 잘못되고 비Windows에서는 예외 발생</td></tr>
+          <tr><td class="mono">F56</td><td><span class="sev sev-low">경미</span></td><td class="mono">docker-compose.yml:10</td><td>상주 명령이 종료 신호를 무시해 중지에 매번 10초가 걸리고 version 키가 폐기됨</td></tr>
+          <tr><td class="mono">F57</td><td><span class="sev sev-low">경미</span></td><td class="mono">requirements.txt:1</td><td>미사용 패키지 4개 포함, 실제 사용하는 peewee 누락</td></tr>
+          <tr><td class="mono">F58</td><td><span class="sev sev-low">경미</span></td><td class="mono">gui.py:301</td><td>연도 목록 갱신이 후속 연쇄를 두 번 실행</td></tr>
+          <tr><td class="mono">F59</td><td><span class="sev sev-low">경미</span></td><td class="mono">gui.py:371</td><td>챕터 변경 한 번에 후속 처리가 최대 세 번 실행</td></tr>
+          <tr><td class="mono">F60</td><td><span class="sev sev-low">경미</span></td><td class="mono">gui.py:578</td><td>숨김 상태 확인 여부가 메서드마다 달라 우연한 순서 의존</td></tr>
+          <tr><td class="mono">F61</td><td><span class="sev sev-low">경미</span></td><td class="mono">gui.py:553</td><td>연속 커밋의 편집 잔재, 중복 문장 3쌍과 도달 불가 메서드</td></tr>
+          <tr><td class="mono">F62</td><td><span class="sev sev-low">경미</span></td><td class="mono">chapter.py:1</td><td>미사용 클래스·메서드·신호 다수</td></tr>
+          <tr><td class="mono">F63</td><td><span class="sev sev-low">경미</span></td><td class="mono">dbbase.py:29</td><td>주석 처리된 코드가 파일 절반을 차지</td></tr>
+          <tr><td class="mono">F64</td><td><span class="sev sev-low">경미</span></td><td class="mono">gui.py:469</td><td>경로 자동 갱신이 사용자가 직접 지정한 경로를 덮어씀</td></tr>
+          <tr><td class="mono">F65</td><td><span class="sev sev-low">경미</span></td><td class="mono">gui.py:700</td><td>동기화마다 새 로그 창을 만들어 이전 로그가 사라지고 리포트는 지울 수단이 없음</td></tr>
+          <tr><td class="mono">F66</td><td><span class="sev sev-low">경미</span></td><td class="mono">evaluator.py:62</td><td>중복 학번이 있으면 진행률이 100%에 도달하지 않음</td></tr>
+          <tr><td class="mono">F67</td><td><span class="sev sev-low">경미</span></td><td class="mono">전체</td><td>테스트 0건, 설명 주석 3개, 타입 표기 81개 중 11개</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">검증 방법</span>
+      <h2>어떻게 확인했는가</h2>
+    </div>
+    <div class="method">
+      <p>
+        여덟 관점의 분석 에이전트가 소스 전체와 저장소 데이터를 읽어 133건을 보고했고, 같은 원인을
+        가리키는 항목을 67건으로 병합했습니다. 각 결함에 독립 검증자를 붙여 반박을 시도하게 하고,
+        과반이 반박하면 폐기했습니다. 검증자는 코드 정합성과 재현 가능성을 나누어 맡았고,
+        가능한 경우 격리된 임시 디렉터리에서 실제로 실행해 확인했습니다. 학생 저장소를 변경하는 명령은
+        쓰지 않았습니다.
+      </p>
+      <div class="rejected">
+        <p style="color: var(--ink); font-weight: 600; font-size: 14.5px">반박되어 폐기한 주장 2건</p>
+        <div class="item">
+          <div class="h"><span class="strike">Windows 모드 C 컴파일이 와일드카드 확장에 실패한다</span></div>
+          <p>인용부호로 감싼 와일드카드를 이 PC의 MinGW GCC 13.1.0으로 실제 실행한 결과 정상 컴파일되었고,
+            공백이 포함된 경로에서도 두 파일이 모두 링크되었습니다. 컴파일러가 자체적으로 확장합니다.</p>
+        </div>
+        <div class="item">
+          <div class="h"><span class="strike">동기화 중 창을 닫으면 스레드 파괴로 비정상 종료된다</span></div>
+          <p>실제 화면을 띄워 작업 중 창을 닫는 실험을 반복했으나 매번 정상 종료되었습니다.
+            동기화 중에는 로그 창이 따로 열려 있어 주 창만 닫아도 앱이 계속 살아 있습니다.</p>
+        </div>
+      </div>
+      <p>
+        아직 아무도 보지 않은 영역도 있습니다. 성적 산출과 기록 계층 전체, 테스트케이스 자체의
+        품질 검증 절차, 제출 기한 판정과 유사도 검사, 개인정보 보관 기간과 정리 정책,
+        여러 조교가 같은 호스트를 공유할 때의 충돌입니다. 저장소를 clone 하면서도 커밋 시각과
+        이력을 전혀 읽지 않아, git이 주는 가장 유용한 정보를 버리고 있습니다.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <span>분석 대상: 커밋 e6f13ff, 브랜치 GEN-850_evaluation. 주 브랜치보다 7커밋 앞서 있고 마지막 1커밋은 미푸시 상태입니다.</span>
+    <span>저장소 이력: 2023년 9월부터 2025년 12월까지 53커밋, 실질 작성자 4명. 채점 기능은 전부 2025년 12월 작업입니다.</span>
+    <span>측정 수치는 모두 이 저장소의 실제 데이터에서 집계했으며 학번과 이름 등 개인정보는 포함하지 않았습니다.</span>
+  </footer>
+
+</div>

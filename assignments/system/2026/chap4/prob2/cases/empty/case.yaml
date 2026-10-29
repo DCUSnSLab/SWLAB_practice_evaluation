@@ -1,0 +1,5 @@
+args:
+- source.txt
+- destination.txt
+files:
+  destination.txt: ''

@@ -1,0 +1,6 @@
+services:
+  grader:
+    build: .
+    image: grader-image
+    command: ["python3", "--version"]
+    network_mode: none

@@ -1,0 +1,119 @@
+{
+  "summary": "3장 PPT 최장 줄 예제: 기준 코드와 오답 예제로 검증한 10개 케이스",
+  "review_notes": [
+    "PPT 코드의 printf(\"%s \\n\")에 따라 끝 공백을 포함합니다.",
+    "99바이트 이하의 줄을 전제로 합니다. 임의의 모든 오답을 검출한다는 보장은 아닙니다."
+  ],
+  "cases": [
+    {
+      "name": "normal_longest_line",
+      "description": "기본 최장 문자열",
+      "input": "hello\nworld\nprogramming\n",
+      "args": [],
+      "fixtures": {},
+      "expected": "programming \n",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "single_line",
+      "description": "한 줄 입력",
+      "input": "single\n",
+      "args": [],
+      "fixtures": {},
+      "expected": "single \n",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "empty_input",
+      "description": "입력이 없으면 출력 없음",
+      "input": "",
+      "args": [],
+      "fixtures": {},
+      "expected": "",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "same_length_lines",
+      "description": "동일 길이에서는 첫 번째 줄",
+      "input": "abc\ndef\nghi\n",
+      "args": [],
+      "fixtures": {},
+      "expected": "abc \n",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "first_peak_then_rise",
+      "description": "첫 최댓값 이후 짧아졌다 길어지는 입력",
+      "input": "longest value\nx\nmedium\n",
+      "args": [],
+      "fixtures": {},
+      "expected": "longest value \n",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "middle_peak_actual_lengths",
+      "description": "가운데 최장 줄 · 이름 대신 실제 길이 비교",
+      "input": "a\nmedium length line\nlongest line here\nb\n",
+      "args": [],
+      "fixtures": {},
+      "expected": "medium length line \n",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "spaces_inside_line",
+      "description": "단어가 아닌 전체 줄 비교",
+      "input": "abc\na bc\n",
+      "args": [],
+      "fixtures": {},
+      "expected": "a bc \n",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "blank_lines",
+      "description": "빈 줄만 입력되면 출력 없음",
+      "input": "\n\n",
+      "args": [],
+      "fixtures": {},
+      "expected": "",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "trailing_spaces",
+      "description": "줄 끝 공백도 길이에 포함",
+      "input": "abc  \nzzzz\n",
+      "args": [],
+      "fixtures": {},
+      "expected": "abc   \n",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    },
+    {
+      "name": "max_length_no_newline",
+      "description": "99바이트 경계 · 마지막 줄 개행 없음",
+      "input": "short\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "args": [],
+      "fixtures": {},
+      "expected": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \n",
+      "files": {},
+      "comparison": "exact",
+      "exit_code": 0
+    }
+  ]
+}

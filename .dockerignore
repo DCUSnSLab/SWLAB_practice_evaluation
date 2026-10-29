@@ -1,0 +1,15 @@
+.git
+.idea
+.venv
+.cache
+__pycache__
+src/origin
+강의자료
+testdata
+docs
+reports
+records
+.env
+.env.*
+settings.local.json
+settings.*.local.json
