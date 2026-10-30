@@ -8,11 +8,13 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent)); import support  # noqa: E401
 from grader import Grader
 from midterm import (SUITE, COPY_CASES, ROW, parse_records, compare_records,
                      registration_input, library_case, copy_error_case, main, load_suite)
 
 
+@support.needs_midterm_suite
 class MidtermTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

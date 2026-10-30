@@ -20,6 +20,7 @@ from midterm import load_suite
 from midterm_scoring import settings
 
 
+@support.needs_midterm_suite
 class LatestGradebookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

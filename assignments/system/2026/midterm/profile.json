@@ -1,9 +1,0 @@
-{
-  "database": "db.dat",
-  "create_prefix": "",
-  "create_suffix": "",
-  "record_template": "{id} {title} {author} {year} {count} {available}",
-  "sorted_query_input": "0\n",
-  "args": {},
-  "error_regex": "error|fail|cannot|can.t|not\\s+found|no\\s+such|invalid|오류|에러|실패|없|불가|디렉터리|directory|denied"
-}

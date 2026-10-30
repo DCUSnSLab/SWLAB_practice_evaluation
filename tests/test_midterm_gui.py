@@ -17,6 +17,7 @@ from midterm import ALL_TARGETS, TARGETS, load_suite, grade_suite
 from reports import CaseReport
 
 
+@support.needs_midterm_suite
 class MidtermGuiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

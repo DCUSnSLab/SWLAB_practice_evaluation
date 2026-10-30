@@ -52,6 +52,7 @@ class DatabaseTests(unittest.TestCase):
         report.directory.rmdir()
         self.assertEqual(report.saved()['results'], self.rows)
 
+    @support.needs_midterm_suite
     def test_midterm_overrides_round_trip_and_survive_without_run_json(self):
         from midterm_scoring import settings
         from midterm import load_suite

@@ -44,6 +44,7 @@ class SubmissionZeroTests(unittest.TestCase):
     def run_reviews(self, submissions):
         return list(review_batch(self.client, '파일을 복사한다.', DEFAULT_RUBRIC, submissions, total_score=10))
 
+    @support.needs_midterm_suite
     def test_absent_and_empty_submissions_get_final_zero_without_model_calls_or_fake_evidence(self):
         submissions = [self.submission(str(i), kind) for i, kind in enumerate(
             ('missing_folder', 'missing_file', 'empty', 'whitespace'))]
@@ -120,6 +121,7 @@ class SubmissionZeroTests(unittest.TestCase):
         self.assertEqual(self.run_reviews([submission])[0]['status'], 'error')
         self.client._request.assert_not_called()
 
+    @support.needs_midterm_suite
     def test_zero_archive_database_latest_view_and_csv_preserve_zero_and_reason(self):
         row = self.run_reviews([self.submission('101', 'empty')])[0]
         context = dict(problem='파일을 복사한다.', submissions=[row], rubric=DEFAULT_RUBRIC)
@@ -154,6 +156,7 @@ class SubmissionZeroTests(unittest.TestCase):
         self.assertEqual((row['status'], row['suggested_score'], row['final_score']), ('confirmed', 0, 3))
         validate_report(dict(version=2, context={}, results=[row]))
 
+    @support.needs_midterm_suite
     def test_midterm_missing_folder_or_empty_file_is_graded_zero_without_running(self):
         from midterm import load_suite, grade_suite
         from midterm_scoring import score_students, settings

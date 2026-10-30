@@ -121,6 +121,7 @@ class ResultReviewsTests(unittest.TestCase):
         self.assertLess(table.horizontalHeader().sortIndicatorSection(), 6)
         self.assertNotIn('정성 평가 근거', window.resultDetail.toPlainText())
 
+    @support.needs_midterm_suite
     def test_midterm_all_shows_file_scores_and_execution_totals_remain_unchanged(self):
         from midterm import load_suite
         from midterm_scoring import settings
@@ -220,6 +221,7 @@ class ResultReviewsTests(unittest.TestCase):
         self.assertEqual([window.resultStudent(i) for i in range(2)], ['102', '101'])
         self.assertEqual(window.resultStudent(table.currentRow()), '101')
 
+    @support.needs_midterm_suite
     def test_missing_execution_and_qualitative_causes_are_short_in_the_main_table(self):
         from midterm import grade_suite, load_suite
         from midterm_scoring import settings

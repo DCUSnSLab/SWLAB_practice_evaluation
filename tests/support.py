@@ -1,7 +1,9 @@
 """Point the SQLite store at a throwaway file so tests never touch data/swlab.db."""
 import atexit
 import os
+from pathlib import Path
 import tempfile
+import unittest
 
 _directory = tempfile.TemporaryDirectory(prefix='swlab-test-db-')
 os.environ['SWLAB_DB'] = os.path.join(_directory.name, 'swlab.db')
@@ -43,3 +45,9 @@ def isolate(case):
         except OSError:
             pass
     case.addCleanup(restore)
+
+
+# The exam suite is kept off the public repo, so a fresh clone has no copy of it.
+MIDTERM_SUITE = Path(__file__).resolve().parents[1] / 'assignments/system/2026/midterm'
+needs_midterm_suite = unittest.skipUnless((MIDTERM_SUITE / 'scenarios.json').exists(),
+                                          'assignments/system/ midterm suite is not in this checkout')
